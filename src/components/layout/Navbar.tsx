@@ -1,8 +1,8 @@
-'use client';
+﻿'use client';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense } from 'react';
-import { ShoppingBag, User, Menu, X, Search, LogOut, Sparkles } from 'lucide-react';
+import { ShoppingBag, User, Menu, X, Search, LogOut, Sparkles, MapPin, Package } from 'lucide-react';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 
@@ -34,6 +34,7 @@ function NavbarInner() {
   const totalItems = useCartStore((s) => s.totalItems());
   const openCart = useCartStore((s) => s.openCart);
   const { user, logout } = useAuthStore();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -44,6 +45,10 @@ function NavbarInner() {
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -114,14 +119,14 @@ function NavbarInner() {
               aria-label="Cart"
             >
               <ShoppingBag size={20} />
-              {totalItems > 0 && (
+              {mounted && totalItems > 0 && (
                 <span className="absolute top-1 right-1 w-4 h-4 bg-[#c9a84c] text-black text-[0.6rem] font-bold rounded-full flex items-center justify-center">
                   {totalItems > 9 ? '9+' : totalItems}
                 </span>
               )}
             </button>
 
-            {user ? (
+            {mounted && user ? (
               <div className="relative">
                 <button
                   className="relative flex items-center justify-center w-10 h-10 rounded-lg text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a] transition-colors cursor-pointer"
@@ -150,7 +155,13 @@ function NavbarInner() {
                         href="/orders"
                         className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a] transition-colors text-left"
                       >
-                        Pesanan Saya
+                        <Package size={14} /> Pesanan Saya
+                      </Link>
+                      <Link
+                        href="/addresses"
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a] transition-colors text-left"
+                      >
+                        <MapPin size={14} /> Alamat Saya
                       </Link>
                       {user.role === 'admin' && (
                         <Link
@@ -241,3 +252,6 @@ export default function Navbar() {
     </Suspense>
   );
 }
+
+
+

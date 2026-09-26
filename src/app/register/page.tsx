@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -34,7 +34,7 @@ export default function RegisterPage() {
     const result = await register(form.name, form.email, form.password);
     if (result.success) {
       showToast(result.message, 'success');
-      router.push('/');
+      router.push('/addresses?onboarding=true');
     } else {
       showToast(result.message, 'error');
     }

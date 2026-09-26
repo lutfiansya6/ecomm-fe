@@ -1,5 +1,5 @@
-// ============================================================
-// LUXE E-Commerce — TypeScript Type Definitions
+﻿// ============================================================
+// LUXE E-Commerce - TypeScript Type Definitions
 // ============================================================
 
 export interface User {
@@ -24,6 +24,7 @@ export interface Product {
   sizes: string[];
   colors: string[];
   stock: number;
+  weight?: number; // in grams (default 500g)
   featured: boolean;
   rating: number;
   reviewCount: number;
@@ -49,10 +50,45 @@ export interface Address {
   fullName: string;
   phone: string;
   street: string;
+  /** Kabupaten/Kota name (text, from wilayah API) */
   city: string;
+  /** Province name (text, from wilayah API) */
   province: string;
   postalCode: string;
   country: string;
+  /** Kecamatan name (text, from wilayah API) - optional for backward compat */
+  district?: string;
+  /** Kelurahan/Desa name (text, from wilayah API) - optional for backward compat */
+  village?: string;
+  label?: string;
+}
+
+export interface UserAddress extends Address {
+  id: string;
+  userId: string;
+  label: string; // e.g. "Rumah", "Kantor", "Apartemen"
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ShippingDestination {
+  id: number;
+  label: string;
+  subdistrict_name?: string;
+  district_name?: string;
+  city_name?: string;
+  province_name?: string;
+  zip_code?: string;
+}
+
+export interface ShippingCostOption {
+  name: string;
+  code: string;
+  service: string;
+  description?: string;
+  cost: number;
+  etd: string;
 }
 
 export interface Order {
@@ -60,6 +96,9 @@ export interface Order {
   userId: string;
   items: CartItem[];
   address: Address;
+  courier?: string;
+  courierService?: string;
+  courierEtd?: string;
   paymentMethod: 'credit_card' | 'gopay' | 'cod';
   paymentStatus: 'pending' | 'paid' | 'failed';
   orderStatus: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';

@@ -1,8 +1,8 @@
-// proxy.ts — Route protection (renamed from middleware.ts per Next.js 16)
+﻿// proxy.ts - Route protection (Next.js App Router)
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 
-const PROTECTED_ROUTES = ['/orders', '/checkout'];
+const PROTECTED_ROUTES = ['/orders', '/checkout', '/addresses'];
 const ADMIN_ROUTES = ['/admin'];
 const AUTH_ROUTES = ['/login', '/register'];
 
@@ -40,5 +40,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/orders/:path*', '/checkout/:path*', '/admin/:path*', '/login', '/register'],
+  matcher: ['/orders/:path*', '/checkout/:path*', '/addresses/:path*', '/addresses', '/admin/:path*', '/login', '/register'],
 };
