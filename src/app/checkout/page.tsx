@@ -1,12 +1,13 @@
 'use client';
 // ============================================================
 // LUXE E-Commerce - Checkout Page
-// Integrated with User Saved Addresses, Wilayah Indonesia & RajaOngkir Shipping
+// Integrated with User Addresses, RajaOngkir Shipping & QRIS QR Code
 // ============================================================
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   CreditCard,
   Smartphone,
@@ -26,6 +27,9 @@ import {
   Clock,
   ShieldCheck,
   Scale,
+  QrCode,
+  Sparkles,
+  Check,
 } from 'lucide-react';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
@@ -38,6 +42,8 @@ type Step = 'address' | 'payment' | 'processing' | 'result';
 type PaymentMethod = 'credit_card' | 'gopay' | 'cod';
 type AddressMode = 'saved' | 'new';
 
+const QRIS_DURATION_SECONDS = 15 * 60; // 15 minutes countdown
+
 export default function CheckoutPage() {
   const router = useRouter();
   const { items, totalPrice, clearCart } = useCartStore();
@@ -46,10 +52,14 @@ export default function CheckoutPage() {
   const [mounted, setMounted] = useState(false);
 
   const [step, setStep] = useState<Step>('address');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('credit_card');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('gopay');
   const [paymentResult, setPaymentResult] = useState<PaymentResult | null>(null);
   const [orderId, setOrderId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+
+  // QRIS Countdown Timer State
+  const [qrisTimeLeft, setQrisTimeLeft] = useState(QRIS_DURATION_SECONDS);
 
   // Saved Addresses State
   const [savedAddresses, setSavedAddresses] = useState<UserAddress[]>([]);
@@ -94,9 +104,24 @@ export default function CheckoutPage() {
     setMounted(true);
   }, []);
 
+  // Countdown timer effect for QRIS
+  useEffect(() => {
+    if (step !== 'payment' || paymentMethod !== 'gopay') return;
+    const interval = setInterval(() => {
+      setQrisTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [step, paymentMethod]);
+
+  const formatTimer = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const remainingSecs = secs % 60;
+    return `${mins.toString().padStart(2, '0')}:${remainingSecs.toString().padStart(2, '0')}`;
+  };
+
   // Fetch shipping costs based on current address
   const fetchShippingRates = useCallback(async (targetAddr: Address) => {
-    const searchKeyword = targetAddr.district || targetAddr.city;
+    const searchKeyword = targetAddr.district || targetAddr.city || targetAddr.province;
     if (!searchKeyword) {
       setShippingOptions([]);
       setSelectedShipping(null);
@@ -128,6 +153,10 @@ export default function CheckoutPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           destinationId: bestDest.id,
+          destinationLabel: bestDest.label,
+          province: targetAddr.province,
+          city: targetAddr.city,
+          district: targetAddr.district,
           weight: totalWeight,
           courier: 'all',
         }),
@@ -137,7 +166,6 @@ export default function CheckoutPage() {
       if (costData.success && Array.isArray(costData.data) && costData.data.length > 0) {
         const options: ShippingCostOption[] = costData.data;
         setShippingOptions(options);
-        // Default to first option
         setSelectedShipping(options[0]);
       } else {
         setShippingError('Gagal menghitung ongkos kirim. Silakan coba lagi.');
@@ -314,7 +342,7 @@ export default function CheckoutPage() {
             village: address.village,
             postalCode: address.postalCode,
             country: 'Indonesia',
-            isDefault: savedAddresses.length === 0,
+            isDefault: true,
           }),
         });
       } catch {
@@ -323,6 +351,75 @@ export default function CheckoutPage() {
     }
 
     setStep('payment');
+  };
+
+  // Check QRIS Payment Status (Simulated polling)
+  const handleCheckQrisStatus = async () => {
+    setIsCheckingStatus(true);
+    showToast('Memeriksa status pembayaran di jaringan QRIS...', 'info');
+    await new Promise((r) => setTimeout(r, 1500));
+    setIsCheckingStatus(false);
+    showToast('Pembayaran belum terdeteksi. Silakan scan QR code dan selesaikan transfer.', 'info');
+  };
+
+  // Simulate Payment Success (Dev mode helper)
+  const handleSimulatePaymentSuccess = async () => {
+    setIsSubmitting(true);
+    setStep('processing');
+
+    try {
+      // 1. Create order if not created yet
+      let currentOrderId = orderId;
+      if (!currentOrderId) {
+        const orderRes = await fetch('/api/orders', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            items,
+            address,
+            shipping: selectedShipping?.cost || 0,
+            courier: selectedShipping?.name || 'Reguler',
+            courierService: selectedShipping?.service || 'REG',
+            courierEtd: selectedShipping?.etd || '',
+            paymentMethod: 'gopay',
+            notes: 'QRIS Simulated Payment',
+          }),
+        });
+        const orderData = await orderRes.json();
+        if (!orderData.success) throw new Error(orderData.error);
+        currentOrderId = orderData.data.id;
+        setOrderId(currentOrderId);
+      }
+
+      await new Promise((r) => setTimeout(r, 1200));
+
+      // 2. Complete payment with forceSuccess
+      const payRes = await fetch('/api/payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          orderId: currentOrderId,
+          method: 'gopay',
+          forceSuccess: true,
+        }),
+      });
+
+      const payData = await payRes.json();
+      setPaymentResult(payData.data);
+      if (payData.data?.success) clearCart();
+      setStep('result');
+    } catch {
+      showToast('Gagal memproses simulasi pembayaran.', 'error');
+      setStep('payment');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handlePlaceOrder = async () => {
@@ -422,7 +519,7 @@ export default function CheckoutPage() {
           </div>
           <div style={{ textAlign: 'center' }}>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.75rem', fontWeight: 400, marginBottom: 'var(--space-3)' }}>Memproses Pembayaran</h2>
-            <p style={{ color: 'var(--clr-text-2)' }}>Harap tunggu sejenak, pesanan Anda sedang diverifikasi...</p>
+            <p style={{ color: 'var(--clr-text-2)' }}>Harap tunggu sejenak, verifikasi transaksi pembayaran Anda...</p>
           </div>
         </div>
       )}
@@ -448,12 +545,12 @@ export default function CheckoutPage() {
 
             <div className="card" style={{ padding: 'var(--space-5)', textAlign: 'left', marginBottom: 'var(--space-6)' }}>
               {[
-                { label: 'Order ID', value: orderId },
+                { label: 'Order ID', value: orderId || 'ORD-LUXE-DEMO' },
                 { label: 'Transaction ID', value: paymentResult.transactionId },
                 { label: 'Kurir Pengiriman', value: `${selectedShipping?.name || 'Kurir'} - ${selectedShipping?.service || 'REG'} (${selectedShipping?.etd || 'Estimasi tiba'})` },
                 { label: 'Ongkos Kirim', value: formatPrice(selectedShipping?.cost || 0) },
-                { label: 'Total', value: formatPrice(paymentResult.amount) },
-                { label: 'Metode', value: paymentResult.method === 'credit_card' ? 'Kartu Kredit' : paymentResult.method === 'gopay' ? 'GoPay' : 'COD' },
+                { label: 'Total Pembayaran', value: formatPrice(paymentResult.amount) },
+                { label: 'Metode', value: paymentResult.method === 'gopay' || paymentResult.method === 'qris' ? 'QRIS / GoPay' : paymentResult.method === 'credit_card' ? 'Kartu Kredit' : 'COD' },
                 { label: 'Alamat Kirim', value: `${address.fullName} - ${address.city}, ${address.province}` },
               ].map(({ label, value }) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--space-2) 0', borderBottom: '1px solid var(--clr-border)' }}>
@@ -703,7 +800,7 @@ export default function CheckoutPage() {
                         style={{ accentColor: 'var(--clr-gold)', width: '18px', height: '18px', cursor: 'pointer' }}
                       />
                       <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
-                        Simpan alamat ini ke buku alamat saya
+                        Simpan sebagai alamat utama saya
                       </span>
                     </label>
 
@@ -878,7 +975,7 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* Step 2: Payment Step */}
+      {/* Step 2: Payment Step (QRIS, Credit Card, COD) */}
       {step === 'payment' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 'var(--space-8)', alignItems: 'start' }}>
           <div>
@@ -923,8 +1020,8 @@ export default function CheckoutPage() {
             {/* Payment method selector */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
               {[
+                { key: 'gopay', label: 'QRIS / E-Wallet', icon: QrCode },
                 { key: 'credit_card', label: 'Kartu Kredit', icon: CreditCard },
-                { key: 'gopay', label: 'GoPay / QRIS', icon: Smartphone },
                 { key: 'cod', label: 'COD (Bayar di Tempat)', icon: Package },
               ].map(({ key, label, icon: Icon }) => (
                 <button
@@ -949,6 +1046,182 @@ export default function CheckoutPage() {
                 </button>
               ))}
             </div>
+
+            {/* QRIS / E-Wallet Section */}
+            {paymentMethod === 'gopay' && (
+              <div style={{
+                background: 'var(--clr-bg-2)',
+                border: '1px solid var(--clr-border)',
+                borderRadius: 'var(--radius-lg)',
+                padding: 'var(--space-6)',
+                animation: 'fadeIn 0.3s both',
+              }}>
+                {/* QRIS Header */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingBottom: 'var(--space-4)',
+                  borderBottom: '1px solid var(--clr-border)',
+                  marginBottom: 'var(--space-6)',
+                  flexWrap: 'wrap',
+                  gap: 'var(--space-2)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{
+                      background: '#c71c1c',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      fontSize: '0.85rem',
+                      letterSpacing: '0.08em',
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                    }}>
+                      QRIS
+                    </div>
+                    <div>
+                      <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--clr-text)', margin: 0 }}>
+                        QRIS Standar Pembayaran Nasional
+                      </h4>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--clr-text-3)' }}>
+                        NMID: ID102026092601 • LUXE Official Store
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Countdown Timer */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '0.85rem',
+                    color: qrisTimeLeft < 180 ? 'var(--clr-error)' : 'var(--clr-gold)',
+                    fontWeight: 600,
+                    background: 'var(--clr-bg-3)',
+                    padding: '4px 10px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--clr-border)',
+                  }}>
+                    <Clock size={15} />
+                    <span>Sisa Waktu: {formatTimer(qrisTimeLeft)}</span>
+                  </div>
+                </div>
+
+                {/* QR Code Container */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 'var(--space-6)',
+                }}>
+                  <div style={{
+                    background: '#ffffff',
+                    padding: '18px',
+                    borderRadius: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.6)',
+                    border: '2px solid rgba(201,168,76,0.3)',
+                    maxWidth: '260px',
+                  }}>
+                    {/* TODO: Ganti dengan qris_string asli dari QRISLY API setelah integrasi sungguhan */}
+                    <QRCodeSVG
+                      value={`DUMMY-QRIS-ORDER-${orderId || 'NEW'}-${total}`}
+                      size={220}
+                      level="M"
+                    />
+                    <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                      <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 700, color: '#111', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Scan dengan Aplikasi Pembayaran
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 'var(--space-3)', textAlign: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--clr-text-3)' }}>
+                      Total Pembayaran QRIS:
+                    </span>
+                    <p style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--clr-gold)', margin: '2px 0' }}>
+                      {formatPrice(total)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Scan Instructions */}
+                <div style={{
+                  background: 'var(--clr-bg-3)',
+                  border: '1px solid var(--clr-border)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 'var(--space-4)',
+                  marginBottom: 'var(--space-6)',
+                }}>
+                  <h5 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--clr-text)', marginBottom: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Smartphone size={15} style={{ color: 'var(--clr-gold)' }} /> Cara Pembayaran via QRIS:
+                  </h5>
+                  <ol style={{ margin: 0, paddingLeft: 'var(--space-5)', fontSize: '0.8rem', color: 'var(--clr-text-2)', lineHeight: 1.6 }}>
+                    <li>Buka aplikasi <strong>BCA Mobile, GoPay, OVO, DANA, ShopeePay, LinkAja</strong>, atau m-Banking pilihan Anda.</li>
+                    <li>Pilih menu <strong>Bayar</strong> / <strong>Scan QRIS</strong>.</li>
+                    <li>Arahkan kamera HP ke QR Code di atas.</li>
+                    <li>Periksa nama merchant <strong>LUXE Official Store</strong> dan nominal <strong>{formatPrice(total)}</strong>, lalu konfirmasi pembayaran.</li>
+                  </ol>
+                </div>
+
+                {/* QRIS Action Buttons */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <button
+                    type="button"
+                    onClick={handleCheckQrisStatus}
+                    className="btn btn-outline btn-block"
+                    disabled={isCheckingStatus || isSubmitting}
+                  >
+                    {isCheckingStatus ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={16} />
+                    )}
+                    Cek Status Pembayaran
+                  </button>
+
+                  {/* Dev / Demo Simulator Button */}
+                  <div style={{
+                    marginTop: 'var(--space-2)',
+                    padding: 'var(--space-3)',
+                    background: 'rgba(201,168,76,0.08)',
+                    border: '1px dashed var(--clr-gold-dark)',
+                    borderRadius: 'var(--radius-md)',
+                    textAlign: 'center',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '6px' }}>
+                      <span className="badge badge-gold" style={{ fontSize: '0.65rem' }}>
+                        Mode Development / Demo
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--clr-text-3)', marginBottom: '8px' }}>
+                      Simulasikan status bayar QRIS langsung sukses tanpa menunggu transfer asli.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleSimulatePaymentSuccess}
+                      className="btn btn-primary btn-block"
+                      disabled={isSubmitting}
+                      style={{ background: 'linear-gradient(135deg, #c9a84c 0%, #9e7d2b 100%)', color: '#000', fontWeight: 600 }}
+                    >
+                      {isSubmitting ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <>
+                          <Check size={16} /> Simulasikan Pembayaran Berhasil
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Credit card form */}
             {paymentMethod === 'credit_card' && (
@@ -992,14 +1265,10 @@ export default function CheckoutPage() {
                     {cardErrors.name && <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>{cardErrors.name}</span>}
                   </div>
                 </div>
-              </div>
-            )}
 
-            {paymentMethod === 'gopay' && (
-              <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-8)', textAlign: 'center', animation: 'fadeIn 0.3s both' }}>
-                <Smartphone size={48} style={{ color: 'var(--clr-gold)', margin: '0 auto var(--space-4)' }} />
-                <p style={{ fontWeight: 600, marginBottom: 'var(--space-2)' }}>Bayar via GoPay / QRIS</p>
-                <p style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>Klik bayar sekarang dan transaksi simulasi QRIS akan diproses secara otomatis.</p>
+                <button className="btn btn-primary btn-lg btn-block" style={{ marginTop: 'var(--space-8)' }} onClick={handlePlaceOrder} disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <>Bayar Sekarang - {formatPrice(total)}</>}
+                </button>
               </div>
             )}
 
@@ -1008,12 +1277,12 @@ export default function CheckoutPage() {
                 <Package size={48} style={{ color: 'var(--clr-gold)', margin: '0 auto var(--space-4)' }} />
                 <p style={{ fontWeight: 600, marginBottom: 'var(--space-2)' }}>Bayar di Tempat (COD)</p>
                 <p style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>Siapkan uang tunai sejumlah {formatPrice(total)} saat kurir tiba di alamat Anda.</p>
+
+                <button className="btn btn-primary btn-lg btn-block" style={{ marginTop: 'var(--space-8)' }} onClick={handlePlaceOrder} disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <>Konfirmasi Pesanan COD - {formatPrice(total)}</>}
+                </button>
               </div>
             )}
-
-            <button className="btn btn-primary btn-lg btn-block" style={{ marginTop: 'var(--space-8)' }} onClick={handlePlaceOrder} disabled={isSubmitting}>
-              {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <>Bayar Sekarang - {formatPrice(total)}</>}
-            </button>
           </div>
 
           {/* Order summary */}
