@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/auth';
 import { useToast } from '@/components/ui/ToastProvider';
-import { Package, ChevronRight, Clock } from 'lucide-react';
+import { Package, ChevronRight, Clock, Star } from 'lucide-react';
 import { formatPrice } from '@/lib/utils';
 import type { Order } from '@/types';
 import Link from 'next/link';
@@ -26,13 +26,17 @@ export default function OrdersPage() {
   const { showToast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
+    if (!mounted) return;
     const fetchOrders = async () => {
       try {
         const res = await fetch('/api/orders', { headers: { Authorization: `Bearer ${token}` } });
         const data = await res.json();
-        if (data.success) setOrders(data.data.orders);
+        if (data.success) setOrders(data.data?.orders ?? []);
       } catch {
         showToast('Gagal memuat pesanan', 'error');
       } finally {
@@ -40,7 +44,7 @@ export default function OrdersPage() {
       }
     };
     fetchOrders();
-  }, [token]);
+  }, [token, mounted]);
 
   return (
     <div className="container" style={{ padding: 'calc(72px + var(--space-8)) var(--space-6) var(--space-12)', maxWidth: '900px' }}>
@@ -65,7 +69,7 @@ export default function OrdersPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          {orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((order, i) => (
+          {[...(orders ?? [])].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((order, i) => (
             <div key={order.id} className="card" style={{ padding: 'var(--space-6)', animation: `fadeIn 0.3s ${i * 0.05}s both` }}>
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 'var(--space-4)', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
@@ -91,13 +95,24 @@ export default function OrdersPage() {
 
               {/* Items */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-                {order.items.map((item) => (
+                {(order.items ?? []).map((item) => (
                   <div key={`${item.productId}-${item.size}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', padding: 'var(--space-2) var(--space-3)', background: 'var(--clr-bg-3)', borderRadius: 'var(--radius-sm)' }}>
                     <span>
                       <strong>{item.product?.name || item.productId}</strong>
                       <span style={{ color: 'var(--clr-text-2)', marginLeft: 'var(--space-2)' }}>× {item.quantity} ({item.size})</span>
                     </span>
-                    <span style={{ fontWeight: 600 }}>{formatPrice((item.product?.price || 0) * item.quantity)}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                      <span style={{ fontWeight: 600 }}>{formatPrice((item.product?.price || 0) * item.quantity)}</span>
+                      {order.orderStatus === 'delivered' && (
+                        <Link
+                          href={`/products/${item.productId}?review=1&order=${order.id}`}
+                          className="btn btn-ghost btn-sm"
+                          style={{ padding: '0.25rem 0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <Star size={12} /> Tulis Ulasan
+                        </Link>
+                      )}
+                    </span>
                   </div>
                 ))}
               </div>

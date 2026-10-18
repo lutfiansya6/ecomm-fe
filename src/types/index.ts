@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // LUXE E-Commerce - TypeScript Type Definitions
 // ============================================================
 
@@ -29,6 +29,18 @@ export interface Product {
   rating: number;
   reviewCount: number;
   tags: string[];
+  createdAt: string;
+}
+
+export interface Review {
+  id: string;
+  productId: string;
+  orderId: string;
+  userId: string;
+  userName: string;
+  rating: number; // 1-5
+  comment: string;
+  status: 'published' | 'hidden';
   createdAt: string;
 }
 

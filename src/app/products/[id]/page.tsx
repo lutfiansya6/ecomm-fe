@@ -3,12 +3,13 @@ import { useEffect, useState, use } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { ShoppingBag, ArrowLeft, Check, Minus, Plus } from 'lucide-react';
-import type { Product } from '@/types';
+import type { Product, Review } from '@/types';
 import { formatPrice, discountPercent } from '@/lib/utils';
 import { useCartStore } from '@/store/cart';
 import { useToast } from '@/components/ui/ToastProvider';
 import StarRating from '@/components/ui/StarRating';
 import ProductCard from '@/components/product/ProductCard';
+import ProductTabs from '@/components/product/ProductTabs';
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -20,6 +21,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const [selectedColor, setSelectedColor] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewsLoaded, setReviewsLoaded] = useState(false);
+  const [focusReviewForm, setFocusReviewForm] = useState(false);
+  const [preferredOrderId, setPreferredOrderId] = useState<string | null>(null);
   const addItem = useCartStore((s) => s.addItem);
   const openCart = useCartStore((s) => s.openCart);
   const { showToast } = useToast();
@@ -41,6 +46,35 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     };
     fetchProduct();
   }, [id]);
+
+  useEffect(() => {
+    const fetchReviews = async () => {
+      try {
+        const res = await fetch(`/api/products/${id}/reviews`);
+        const data = await res.json();
+        setReviews(data.success ? (data.data?.reviews ?? []) : []);
+      } catch {
+        setReviews([]);
+      } finally {
+        setReviewsLoaded(true);
+      }
+    };
+    fetchReviews();
+  }, [id]);
+
+  // Arriving from the orders page (?review=1&order=ORD-...)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('review')) {
+      setFocusReviewForm(true);
+      setPreferredOrderId(params.get('order'));
+    }
+  }, []);
+
+  const reviewCount = reviews.length;
+  const averageRating = reviewCount === 0
+    ? 0
+    : Math.round((reviews.reduce((sum, r) => sum + r.rating, 0) / reviewCount) * 10) / 10;
 
   const handleAddToCart = () => {
     if (!product) return;
@@ -103,8 +137,16 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.5rem, 3vw, 2.2rem)', fontWeight: 400, marginTop: 'var(--space-2)', lineHeight: 1.2 }}>
                 {product.name}
               </h1>
-              <div style={{ marginTop: 'var(--space-3)' }}>
-                <StarRating rating={product.rating} count={product.reviewCount} size={16} />
+              <div id="product-rating-summary" style={{ marginTop: 'var(--space-3)', minHeight: '24px' }}>
+                {reviewsLoaded && (reviewCount > 0 ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                    <StarRating rating={averageRating} size={16} />
+                    <span style={{ fontWeight: 700, color: 'var(--clr-gold)' }}>{averageRating.toFixed(1)}</span>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>dari {reviewCount} ulasan</span>
+                  </div>
+                ) : (
+                  <span style={{ fontSize: '0.85rem', color: 'var(--clr-text-3)' }}>Belum ada ulasan</span>
+                ))}
               </div>
             </div>
 
@@ -190,12 +232,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               </button>
             </div>
 
-            {/* Description */}
-            <div style={{ borderTop: '1px solid var(--clr-border)', paddingTop: 'var(--space-6)' }}>
-              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', fontWeight: 400, marginBottom: 'var(--space-3)' }}>Deskripsi</h3>
-              <p style={{ color: 'var(--clr-text-2)', lineHeight: '1.85', fontSize: '0.95rem' }}>{product.description}</p>
-            </div>
-
             {/* Tags */}
             <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
               {product.tags.map((tag) => (
@@ -204,6 +240,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             </div>
           </div>
         </div>
+
+        <ProductTabs
+          product={product}
+          reviews={reviews}
+          averageRating={averageRating}
+          onReviewCreated={(r) => setReviews((prev) => [r, ...(prev ?? [])])}
+          focusReviewForm={focusReviewForm}
+          preferredOrderId={preferredOrderId}
+        />
 
         {/* Related Products */}
         {related.length > 0 && (
