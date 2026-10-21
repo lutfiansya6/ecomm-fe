@@ -2,11 +2,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { CartItem, Product } from '@/types';
+import { getCartItemImage } from '@/lib/colors';
 
 interface CartStore {
   items: CartItem[];
   isOpen: boolean;
-  addItem: (product: Product, quantity: number, size: string, color: string) => void;
+  addItem: (product: Product, quantity: number, size: string, color: string, image?: string) => void;
   removeItem: (productId: string, size: string, color: string) => void;
   updateQuantity: (productId: string, size: string, color: string, quantity: number) => void;
   clearCart: () => void;
@@ -23,7 +24,8 @@ export const useCartStore = create<CartStore>()(
       items: [],
       isOpen: false,
 
-      addItem: (product, quantity, size, color) => {
+      addItem: (product, quantity, size, color, image) => {
+        const itemImage = image || getCartItemImage({ product, color });
         set((state) => {
           const existing = state.items.find(
             (i) => i.productId === product.id && i.size === size && i.color === color
@@ -32,13 +34,16 @@ export const useCartStore = create<CartStore>()(
             return {
               items: state.items.map((i) =>
                 i.productId === product.id && i.size === size && i.color === color
-                  ? { ...i, quantity: i.quantity + quantity }
+                  ? { ...i, quantity: i.quantity + quantity, image: itemImage || i.image }
                   : i
               ),
             };
           }
           return {
-            items: [...state.items, { productId: product.id, product, quantity, size, color }],
+            items: [
+              ...state.items,
+              { productId: product.id, product, quantity, size, color, image: itemImage },
+            ],
           };
         });
       },
@@ -51,10 +56,7 @@ export const useCartStore = create<CartStore>()(
         })),
 
       updateQuantity: (productId, size, color, quantity) => {
-        if (quantity <= 0) {
-          get().removeItem(productId, size, color);
-          return;
-        }
+        if (quantity < 0) return;
         set((state) => ({
           items: state.items.map((i) =>
             i.productId === productId && i.size === size && i.color === color

@@ -4,9 +4,10 @@ import Link from 'next/link';
 import { ShoppingBag, Heart } from 'lucide-react';
 import { useState } from 'react';
 import type { Product } from '@/types';
-import { formatPrice, discountPercent } from '@/lib/utils';
+import { discountPercent, getImageUrl, DEFAULT_PLACEHOLDER_IMAGE } from '@/lib/utils';
 import { useCartStore } from '@/store/cart';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useT } from '@/i18n/LanguageProvider';
 import StarRating from '@/components/ui/StarRating';
 
 interface ProductCardProps {
@@ -14,8 +15,13 @@ interface ProductCardProps {
 }
 
 export default function ProductCard({ product }: ProductCardProps) {
+  const { t, formatPrice } = useT();
   const [wished, setWished] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [fallbackTriggered, setFallbackTriggered] = useState(false);
+
+  const imgSrc = fallbackTriggered ? DEFAULT_PLACEHOLDER_IMAGE : getImageUrl(product.images?.[0]);
+
   const addItem = useCartStore((s) => s.addItem);
   const openCart = useCartStore((s) => s.openCart);
   const { showToast } = useToast();
@@ -26,7 +32,7 @@ export default function ProductCard({ product }: ProductCardProps) {
     setAdding(true);
     await new Promise((r) => setTimeout(r, 400));
     addItem(product, 1, product.sizes[0], product.colors[0]);
-    showToast(`${product.name} ditambahkan ke keranjang`, 'success');
+    showToast(t('product.quickAddedToCart', { name: product.name }), 'success');
     setAdding(false);
     openCart();
   };
@@ -35,45 +41,71 @@ export default function ProductCard({ product }: ProductCardProps) {
     <Link href={`/products/${product.id}`} style={{ display: 'block' }}>
       <div className="card" style={{ cursor: 'pointer', height: '100%' }}>
         {/* Image */}
-        <div style={{ position: 'relative', aspectRatio: '3/4', overflow: 'hidden', background: 'var(--clr-bg-3)' }}>
+        <div
+          style={{
+            position: 'relative',
+            aspectRatio: '3/4',
+            overflow: 'hidden',
+            background: 'var(--clr-bg-3)',
+          }}
+        >
           <Image
-            src={product.images[0]}
+            src={imgSrc}
             alt={product.name}
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1280px) 33vw, 25vw"
             style={{ objectFit: 'cover', transition: 'transform 0.5s var(--ease-smooth)' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.transform = 'scale(1.05)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.transform = 'scale(1)'}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.transform = 'scale(1.05)')}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.transform = 'scale(1)')}
+            onError={() => setFallbackTriggered(true)}
           />
 
           {/* Badges */}
-          <div style={{ position: 'absolute', top: '12px', left: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div
+            style={{
+              position: 'absolute',
+              top: '12px',
+              left: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+            }}
+          >
             {product.comparePrice && (
               <span className="badge badge-gold">
                 -{discountPercent(product.price, product.comparePrice)}%
               </span>
             )}
-            {product.featured && (
-              <span className="badge badge-neutral">Featured</span>
-            )}
+            {product.featured && <span className="badge badge-neutral">{t('product.featured')}</span>}
             {product.stock <= 5 && product.stock > 0 && (
-              <span className="badge badge-warning">Sisa {product.stock}</span>
+              <span className="badge badge-warning">
+                {t('product.stockLeft', { count: product.stock })}
+              </span>
             )}
-            {product.stock === 0 && (
-              <span className="badge badge-error">Habis</span>
-            )}
+            {product.stock === 0 && <span className="badge badge-error">{t('product.outOfStock')}</span>}
           </div>
 
           {/* Wishlist */}
           <button
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setWished(!wished); }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setWished(!wished);
+            }}
+            aria-label="Wishlist"
             style={{
-              position: 'absolute', top: '12px', right: '12px',
-              width: '36px', height: '36px',
-              background: 'rgba(10,10,10,0.7)', backdropFilter: 'blur(8px)',
+              position: 'absolute',
+              top: '12px',
+              right: '12px',
+              width: '36px',
+              height: '36px',
+              background: 'rgba(10,10,10,0.7)',
+              backdropFilter: 'blur(8px)',
               border: '1px solid var(--clr-border)',
               borderRadius: 'var(--radius-full)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               color: wished ? 'var(--clr-gold)' : 'var(--clr-text-2)',
               transition: 'all var(--transition-fast)',
             }}
@@ -82,11 +114,16 @@ export default function ProductCard({ product }: ProductCardProps) {
           </button>
 
           {/* Quick add (hover overlay) */}
-          <div style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            padding: '12px',
-            opacity: 0, transition: 'opacity var(--transition-base)',
-          }}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              padding: '12px',
+              opacity: 0,
+              transition: 'opacity var(--transition-base)',
+            }}
             className="quick-add-overlay"
           >
             <button
@@ -96,9 +133,21 @@ export default function ProductCard({ product }: ProductCardProps) {
               style={{ backdropFilter: 'blur(8px)' }}
             >
               {adding ? (
-                <span className="animate-spin" style={{ width: '14px', height: '14px', border: '2px solid #000', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} />
+                <span
+                  className="animate-spin"
+                  style={{
+                    width: '14px',
+                    height: '14px',
+                    border: '2px solid #000',
+                    borderTopColor: 'transparent',
+                    borderRadius: '50%',
+                    display: 'inline-block',
+                  }}
+                />
               ) : (
-                <><ShoppingBag size={14} /> Quick Add</>
+                <>
+                  <ShoppingBag size={14} /> {t('product.quickAdd')}
+                </>
               )}
             </button>
           </div>
@@ -106,17 +155,48 @@ export default function ProductCard({ product }: ProductCardProps) {
 
         {/* Info */}
         <div style={{ padding: 'var(--space-4)' }}>
-          <p style={{ fontSize: '0.7rem', color: 'var(--clr-gold)', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '4px' }}>
+          <p
+            style={{
+              fontSize: '0.7rem',
+              color: 'var(--clr-gold)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.12em',
+              marginBottom: '4px',
+            }}
+          >
             {product.category}
           </p>
-          <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1rem', fontWeight: 400, marginBottom: 'var(--space-2)', color: 'var(--clr-text)' }}>
+          <h3
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontSize: '1rem',
+              fontWeight: 400,
+              marginBottom: 'var(--space-2)',
+              color: 'var(--clr-text)',
+            }}
+          >
             {product.name}
           </h3>
           <StarRating rating={product.rating} count={product.reviewCount} size={12} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
-            <span style={{ fontWeight: 600, color: 'var(--clr-text)' }}>{formatPrice(product.price)}</span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-3)',
+              marginTop: 'var(--space-3)',
+            }}
+          >
+            <span style={{ fontWeight: 600, color: 'var(--clr-text)' }}>
+              {formatPrice(product.price)}
+            </span>
             {product.comparePrice && (
-              <span style={{ fontSize: '0.8rem', color: 'var(--clr-text-3)', textDecoration: 'line-through' }}>
+              <span
+                style={{
+                  fontSize: '0.8rem',
+                  color: 'var(--clr-text-3)',
+                  textDecoration: 'line-through',
+                }}
+              >
                 {formatPrice(product.comparePrice)}
               </span>
             )}
