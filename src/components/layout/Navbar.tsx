@@ -1,40 +1,43 @@
-﻿'use client';
+'use client';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense } from 'react';
-import { ShoppingBag, User, Menu, X, Search, LogOut, Sparkles, MapPin, Package } from 'lucide-react';
+import {
+  ShoppingBag,
+  User,
+  Menu,
+  X,
+  Search,
+  LogOut,
+  Sparkles,
+  MapPin,
+  Package,
+} from 'lucide-react';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
-
-const NAV_LINKS = [
-  { href: '/products', label: 'All Products' },
-  { href: '/products?section=new', label: 'New Arrivals' },
-  { href: '/products?section=women', label: 'Women' },
-  { href: '/products?section=men', label: 'Men' },
-  { href: '/products?section=collections', label: 'Collections' },
-  { href: '/products?section=sale', label: 'Sale', isSale: true },
-];
-
-function isLinkActive(linkHref: string, pathname: string, searchParams: URLSearchParams): boolean {
-  const linkUrl = new URL(linkHref, 'http://x');
-  if (linkUrl.pathname !== pathname) return false;
-  const linkSection = linkUrl.searchParams.get('section');
-  const currentSection = searchParams.get('section');
-  // "/products" (no section) is active only when there's no section param
-  if (!linkSection) return !currentSection;
-  return linkSection === currentSection;
-}
+import {
+  DEFAULT_NAV_ITEMS,
+  getNavigationItemHref,
+  getNavigationItemSlug,
+  isNavigationItemActive,
+} from '@/config/navigation';
+import { useT } from '@/i18n/LanguageProvider';
+import { getLocalizedNavLabel } from '@/i18n';
+import type { NavigationItem } from '@/types';
 
 function NavbarInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { t, locale, setLocale } = useT();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [navItems, setNavItems] = useState<NavigationItem[]>(DEFAULT_NAV_ITEMS);
+  const [mounted, setMounted] = useState(false);
+
   const totalItems = useCartStore((s) => s.totalItems());
   const openCart = useCartStore((s) => s.openCart);
   const { user, logout } = useAuthStore();
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -44,16 +47,55 @@ function NavbarInner() {
 
   useEffect(() => {
     setMenuOpen(false);
-  }, [pathname]);
+  }, [pathname, searchParams]);
 
   useEffect(() => {
     setMounted(true);
+    const fetchNavigation = async () => {
+      try {
+        const res = await fetch('/api/navigation?public=1', { cache: 'no-store' });
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          const items: NavigationItem[] = json.data;
+          items.sort((a, b) => a.order - b.order);
+          setNavItems(items);
+        } else {
+          setNavItems(DEFAULT_NAV_ITEMS);
+        }
+      } catch {
+        setNavItems(DEFAULT_NAV_ITEMS);
+      }
+    };
+    fetchNavigation();
   }, []);
 
   const handleLogout = async () => {
     await logout();
     setUserMenuOpen(false);
     window.location.href = '/';
+  };
+
+  const getItemLabel = (item: NavigationItem) => {
+    const slug = getNavigationItemSlug(item);
+    if (slug === '' || slug === 'all' || item.type === 'all' || item.id === 'nav_all') {
+      return t('nav.allProducts');
+    }
+    if (slug === 'new-arrivals' || slug === 'new' || item.type === 'new' || item.id === 'nav_new') {
+      return t('nav.newArrivals');
+    }
+    if (slug === 'women' || item.id === 'nav_women') {
+      return t('nav.women');
+    }
+    if (slug === 'men' || item.id === 'nav_men') {
+      return t('nav.men');
+    }
+    if (slug === 'collections' || item.id === 'nav_collections') {
+      return t('nav.collections');
+    }
+    if (slug === 'sale' || item.type === 'sale' || item.id === 'nav_sale') {
+      return t('nav.sale');
+    }
+    return getLocalizedNavLabel(item, locale);
   };
 
   return (
@@ -74,17 +116,20 @@ function NavbarInner() {
             LUXE
           </Link>
 
-          {/* Desktop Nav */}
+          {/* Desktop Nav - Direct links, no dropdown */}
           <ul className="hidden lg:flex items-center gap-5 flex-1">
-            {NAV_LINKS.map((l) => {
-              const isActive = isLinkActive(l.href, pathname, searchParams);
-              const isSale = 'isSale' in l && l.isSale;
+            {navItems.map((item) => {
+              const href = getNavigationItemHref(item);
+              const isActive = isNavigationItemActive(item, pathname, searchParams);
+              const isAccent = Boolean(item.accent);
+              const itemLabel = getItemLabel(item);
+
               return (
-                <li key={l.href}>
+                <li key={item.id}>
                   <Link
-                    href={l.href}
+                    href={href}
                     className={`text-xs font-medium uppercase tracking-[0.12em] transition-colors relative py-1 flex items-center gap-1.5 ${
-                      isSale
+                      isAccent
                         ? isActive
                           ? 'text-[#dbb85a]'
                           : 'text-[#c9a84c] hover:text-[#dbb85a]'
@@ -95,8 +140,8 @@ function NavbarInner() {
                       isActive ? 'after:w-full' : 'after:w-0 hover:after:w-full'
                     }`}
                   >
-                    {isSale && <Sparkles size={12} />}
-                    {l.label}
+                    {isAccent && <Sparkles size={12} />}
+                    {itemLabel}
                   </Link>
                 </li>
               );
@@ -105,10 +150,43 @@ function NavbarInner() {
 
           {/* Actions */}
           <div className="flex items-center gap-2 ml-auto">
+            {/* Desktop Language Switcher */}
+            <div
+              className="flex items-center text-xs tracking-wider font-semibold border border-[#2a2a2a] rounded-lg px-2 py-1 bg-[#141414]/80 mr-1"
+              role="group"
+              aria-label="Language Selector"
+            >
+              <button
+                type="button"
+                onClick={() => setLocale('en')}
+                className={`px-1 py-0.5 transition-colors cursor-pointer ${
+                  locale === 'en'
+                    ? 'text-[#c9a84c] font-bold'
+                    : 'text-[#707070] hover:text-[#f0f0f0]'
+                }`}
+                aria-label="Switch to English"
+              >
+                EN
+              </button>
+              <span className="text-[#333333] select-none mx-0.5">|</span>
+              <button
+                type="button"
+                onClick={() => setLocale('id')}
+                className={`px-1 py-0.5 transition-colors cursor-pointer ${
+                  locale === 'id'
+                    ? 'text-[#c9a84c] font-bold'
+                    : 'text-[#707070] hover:text-[#f0f0f0]'
+                }`}
+                aria-label="Ganti ke Bahasa Indonesia"
+              >
+                ID
+              </button>
+            </div>
+
             <Link
               href="/products"
               className="relative flex items-center justify-center w-10 h-10 rounded-lg text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a] transition-colors cursor-pointer"
-              aria-label="Search"
+              aria-label={t('nav.search')}
             >
               <Search size={20} />
             </Link>
@@ -116,7 +194,7 @@ function NavbarInner() {
             <button
               className="relative flex items-center justify-center w-10 h-10 rounded-lg text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a] transition-colors cursor-pointer"
               onClick={openCart}
-              aria-label="Cart"
+              aria-label={t('nav.cart')}
             >
               <ShoppingBag size={20} />
               {mounted && totalItems > 0 && (
@@ -131,7 +209,7 @@ function NavbarInner() {
                 <button
                   className="relative flex items-center justify-center w-10 h-10 rounded-lg text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a] transition-colors cursor-pointer"
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  aria-label="User menu"
+                  aria-label={t('nav.userMenu')}
                 >
                   <User size={20} />
                 </button>
@@ -155,27 +233,27 @@ function NavbarInner() {
                         href="/orders"
                         className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a] transition-colors text-left"
                       >
-                        <Package size={14} /> Pesanan Saya
+                        <Package size={14} /> {t('nav.myOrders')}
                       </Link>
                       <Link
                         href="/addresses"
                         className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a] transition-colors text-left"
                       >
-                        <MapPin size={14} /> Alamat Saya
+                        <MapPin size={14} /> {t('nav.myAddresses')}
                       </Link>
                       {user.role === 'admin' && (
                         <Link
                           href="/admin"
                           className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a] transition-colors text-left"
                         >
-                          Dashboard Admin
+                          {t('nav.adminDashboard')}
                         </Link>
                       )}
                       <button
                         className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-left"
                         onClick={handleLogout}
                       >
-                        <LogOut size={14} /> Logout
+                        <LogOut size={14} /> {t('nav.logout')}
                       </button>
                     </div>
                     <div
@@ -187,7 +265,7 @@ function NavbarInner() {
               </div>
             ) : (
               <Link href="/login" className="btn btn-outline btn-sm">
-                Login
+                {t('nav.login')}
               </Link>
             )}
 
@@ -203,19 +281,53 @@ function NavbarInner() {
         </div>
       </nav>
 
-      {/* Mobile Menu */}
+      {/* Mobile Menu - Direct links, no accordions */}
       {menuOpen && (
         <>
-          <div className="fixed top-[72px] left-0 right-0 bg-[#111111] border-b border-[#2a2a2a] p-6 flex flex-col gap-1 z-50 animate-fadeIn">
-            {NAV_LINKS.map((l) => {
-              const isActive = isLinkActive(l.href, pathname, searchParams);
-              const isSale = 'isSale' in l && l.isSale;
+          <div className="fixed top-[72px] left-0 right-0 bg-[#111111] border-b border-[#2a2a2a] p-6 flex flex-col gap-1 z-50 max-h-[calc(100vh-72px)] overflow-y-auto animate-fadeIn">
+            {/* Mobile Language Switcher */}
+            <div className="flex items-center justify-between px-4 py-2.5 border border-[#2a2a2a] rounded-lg bg-[#141414] mb-3">
+              <span className="text-xs uppercase tracking-wider text-[#a0a0a0]">Language / Bahasa</span>
+              <div className="flex items-center text-xs tracking-wider font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setLocale('en')}
+                  className={`px-2.5 py-1 rounded transition-colors ${
+                    locale === 'en'
+                      ? 'text-[#c9a84c] font-bold bg-[#c9a84c]/10'
+                      : 'text-[#707070] hover:text-[#f0f0f0]'
+                  }`}
+                >
+                  EN
+                </button>
+                <span className="text-[#333333] select-none mx-1">|</span>
+                <button
+                  type="button"
+                  onClick={() => setLocale('id')}
+                  className={`px-2.5 py-1 rounded transition-colors ${
+                    locale === 'id'
+                      ? 'text-[#c9a84c] font-bold bg-[#c9a84c]/10'
+                      : 'text-[#707070] hover:text-[#f0f0f0]'
+                  }`}
+                >
+                  ID
+                </button>
+              </div>
+            </div>
+
+            {navItems.map((item) => {
+              const href = getNavigationItemHref(item);
+              const isActive = isNavigationItemActive(item, pathname, searchParams);
+              const isAccent = Boolean(item.accent);
+              const itemLabel = getItemLabel(item);
+
               return (
                 <Link
-                  key={l.href}
-                  href={l.href}
-                  className={`flex items-center gap-2 px-4 py-3 rounded text-base transition-colors ${
-                    isSale
+                  key={item.id}
+                  href={href}
+                  onClick={() => setMenuOpen(false)}
+                  className={`flex items-center gap-2 px-4 py-3 rounded-lg text-base transition-colors ${
+                    isAccent
                       ? isActive
                         ? 'text-[#dbb85a] bg-[#c9a84c]/10'
                         : 'text-[#c9a84c] hover:text-[#dbb85a] hover:bg-[#c9a84c]/10'
@@ -224,14 +336,14 @@ function NavbarInner() {
                         : 'text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a]'
                   }`}
                 >
-                  {isSale && <Sparkles size={16} />}
-                  {l.label}
+                  {isAccent && <Sparkles size={16} />}
+                  {itemLabel}
                 </Link>
               );
             })}
             {!user && (
               <Link href="/login" className="btn btn-primary btn-block mt-4">
-                Login / Register
+                {t('nav.loginRegister')}
               </Link>
             )}
           </div>
@@ -252,6 +364,3 @@ export default function Navbar() {
     </Suspense>
   );
 }
-
-
-
