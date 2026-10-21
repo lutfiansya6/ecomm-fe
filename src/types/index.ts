@@ -12,17 +12,79 @@ export interface User {
   createdAt: string;
 }
 
+export interface ColorVariant {
+  name: string;
+  hex: string;
+  images: string[];
+  stock?: number;
+  /** Optional per-variant price. Falls back to product.price when absent. */
+  price?: number;
+  sizeStock?: Record<string, number>;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  name_en?: string;
+  name_id?: string;
+  label_en?: string;
+  label_id?: string;
+  slug: string;
+  order: number;
+  active: boolean;
+  createdAt: string;
+  productCount?: number;
+}
+
+export type NavigationItemType = 'all' | 'new' | 'sale' | 'category' | 'url';
+
+export interface NavigationChildCategory {
+  id?: string;
+  name: string;
+  name_en?: string;
+  name_id?: string;
+  label_en?: string;
+  label_id?: string;
+  slug: string;
+}
+
+export interface NavigationItem {
+  id: string;
+  name?: string;
+  slug?: string;
+  label: string;
+  label_en?: string;
+  label_id?: string;
+  name_en?: string;
+  name_id?: string;
+  type: NavigationItemType;
+  target: string;
+  accent: boolean;
+  order: number;
+  active: boolean;
+  system: boolean;
+  gender?: 'women' | 'men' | string;
+  childCategoryIds?: (string | NavigationChildCategory)[];
+  children?: NavigationChildCategory[];
+  createdAt?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
   slug: string;
   description: string;
+  shortDescription?: string;
   price: number;
   comparePrice?: number;
-  category: 'dress' | 'blazer' | 'bag' | 'shoes' | 'coat' | 'accessories';
+  category: string;
+  categoryId?: string;
+  gender?: 'women' | 'men' | 'unisex' | string;
+  section?: string;
   images: string[];
   sizes: string[];
   colors: string[];
+  colorVariants?: ColorVariant[];
   stock: number;
   weight?: number; // in grams (default 500g)
   featured: boolean;
@@ -50,6 +112,7 @@ export interface CartItem {
   quantity: number;
   size: string;
   color: string;
+  image?: string;
 }
 
 export interface Cart {
