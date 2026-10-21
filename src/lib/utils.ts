@@ -7,14 +7,32 @@ export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
-/** Format IDR currency */
-export function formatPrice(amount: number): string {
-  return new Intl.NumberFormat('id-ID', {
+/** Format IDR currency according to locale (Rupiah currency is kept, separators follow locale) */
+export function formatPrice(amount: number, locale: string = 'en'): string {
+  const intlLocale = locale === 'id' ? 'id-ID' : 'en-US';
+  return new Intl.NumberFormat(intlLocale, {
     style: 'currency',
     currency: 'IDR',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+/** Format date according to locale */
+export function formatDate(
+  date: string | number | Date,
+  locale: string = 'en',
+  options?: Intl.DateTimeFormatOptions
+): string {
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  const intlLocale = locale === 'id' ? 'id-ID' : 'en-US';
+  const defaultOptions: Intl.DateTimeFormatOptions = options || {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  };
+  return new Intl.DateTimeFormat(intlLocale, defaultOptions).format(d);
 }
 
 /** Discount percentage */
@@ -61,3 +79,6 @@ export function getStars(rating: number): ('full' | 'half' | 'empty')[] {
   }
   return stars;
 }
+
+export * from './colors';
+

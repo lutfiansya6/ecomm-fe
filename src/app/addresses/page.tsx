@@ -1,18 +1,16 @@
-﻿'use client';
+'use client';
 // ============================================================
 // LUXE E-Commerce - User Address Management Page
-// Supports Onboarding, List, Create, Edit, Delete, Set Default
+// Supports Onboarding, List, Create, Edit, Delete, Set Default with i18n
 // ============================================================
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/navigation';
 import {
   MapPin,
   Plus,
   Edit2,
   Trash2,
   CheckCircle2,
-  AlertCircle,
   Loader2,
   Home,
   Building,
@@ -25,15 +23,9 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useT } from '@/i18n/LanguageProvider';
 import WilayahSelect, { type WilayahValue } from '@/components/ui/WilayahSelect';
 import type { UserAddress } from '@/types';
-
-const LABEL_PRESETS = [
-  { label: 'Rumah', icon: Home },
-  { label: 'Kantor', icon: Briefcase },
-  { label: 'Apartemen', icon: Building },
-  { label: 'Lainnya', icon: MapPin },
-];
 
 function AddressesPageContent() {
   const router = useRouter();
@@ -41,6 +33,7 @@ function AddressesPageContent() {
   const isOnboarding = searchParams.get('onboarding') === 'true';
   const { user, token } = useAuthStore();
   const { showToast } = useToast();
+  const { t, locale } = useT();
 
   const [addresses, setAddresses] = useState<UserAddress[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,9 +43,19 @@ function AddressesPageContent() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
 
+  const labelPresets = useMemo(
+    () => [
+      { key: 'home', label: t('checkout.home'), icon: Home },
+      { key: 'office', label: t('checkout.office'), icon: Briefcase },
+      { key: 'apartment', label: t('checkout.apartment'), icon: Building },
+      { key: 'other', label: t('checkout.other'), icon: MapPin },
+    ],
+    [t]
+  );
+
   // Form State
   const [form, setForm] = useState({
-    label: 'Rumah',
+    labelKey: 'home',
     customLabel: '',
     fullName: user?.name || '',
     phone: '',
@@ -78,13 +81,12 @@ function AddressesPageContent() {
       const data = await res.json();
       if (data.success && Array.isArray(data.data?.addresses)) {
         setAddresses(data.data.addresses);
-        // If user has 0 addresses, auto-open form
         if (data.data.addresses.length === 0) {
           setIsModalOpen(true);
         }
       }
     } catch {
-      showToast('Gagal memuat daftar alamat', 'error');
+      showToast(t('errors.addressLoadFailed'), 'error');
     } finally {
       setLoading(false);
     }
@@ -96,11 +98,10 @@ function AddressesPageContent() {
     }
   }, [user, token]);
 
-  // Open Add Modal
   const handleOpenAdd = () => {
     setEditingAddress(null);
     setForm({
-      label: 'Rumah',
+      labelKey: 'home',
       customLabel: '',
       fullName: user?.name || '',
       phone: '',
@@ -117,13 +118,14 @@ function AddressesPageContent() {
     setIsModalOpen(true);
   };
 
-  // Open Edit Modal
   const handleOpenEdit = (addr: UserAddress) => {
     setEditingAddress(addr);
-    const isPreset = LABEL_PRESETS.some((p) => p.label === addr.label);
+    const matchedPreset = labelPresets.find(
+      (p) => p.label.toLowerCase() === addr.label.toLowerCase()
+    );
     setForm({
-      label: isPreset ? addr.label : 'Lainnya',
-      customLabel: isPreset ? '' : addr.label,
+      labelKey: matchedPreset ? matchedPreset.key : 'other',
+      customLabel: matchedPreset ? '' : addr.label,
       fullName: addr.fullName,
       phone: addr.phone,
       street: addr.street,
@@ -142,19 +144,19 @@ function AddressesPageContent() {
   // Validation
   const validateForm = () => {
     const errs: Record<string, string> = {};
-    if (!form.fullName.trim()) errs.fullName = 'Nama lengkap penerima wajib diisi';
-    if (!form.phone.trim()) errs.phone = 'Nomor handphone wajib diisi';
+    if (!form.fullName.trim()) errs.fullName = t('errors.requiredField');
+    if (!form.phone.trim()) errs.phone = t('errors.requiredField');
     else if (!/^[0-9+\-\s]{8,15}$/.test(form.phone.trim())) {
-      errs.phone = 'Format nomor HP tidak valid (8-15 digit)';
+      errs.phone = '8-15 digits';
     }
-    if (!form.street.trim()) errs.street = 'Alamat jalan/gedung wajib diisi';
+    if (!form.street.trim()) errs.street = t('errors.requiredField');
 
     const wErrs: Partial<Record<keyof WilayahValue, string>> = {};
-    if (!form.province) wErrs.province = 'Provinsi wajib dipilih';
-    if (!form.city) wErrs.regency = 'Kabupaten/Kota wajib dipilih';
-    if (!form.district) wErrs.district = 'Kecamatan wajib dipilih';
-    if (!form.village) wErrs.village = 'Kelurahan wajib dipilih';
-    if (!form.postalCode) errs.postalCode = 'Kode pos wajib diisi';
+    if (!form.province) wErrs.province = t('errors.requiredField');
+    if (!form.city) wErrs.regency = t('errors.requiredField');
+    if (!form.district) wErrs.district = t('errors.requiredField');
+    if (!form.village) wErrs.village = t('errors.requiredField');
+    if (!form.postalCode) errs.postalCode = t('errors.requiredField');
 
     setFormErrors(errs);
     setWilayahErrors(wErrs);
@@ -167,7 +169,13 @@ function AddressesPageContent() {
     if (!validateForm()) return;
 
     setIsSubmitting(true);
-    const finalLabel = form.label === 'Lainnya' && form.customLabel.trim() ? form.customLabel.trim() : form.label;
+    const presetObj = labelPresets.find((p) => p.key === form.labelKey);
+    const finalLabel =
+      form.labelKey === 'other' && form.customLabel.trim()
+        ? form.customLabel.trim()
+        : presetObj
+          ? presetObj.label
+          : t('checkout.home');
 
     const payload = {
       label: finalLabel,
@@ -196,11 +204,11 @@ function AddressesPageContent() {
         });
         const data = await res.json();
         if (data.success) {
-          showToast('Alamat berhasil diperbarui!', 'success');
+          showToast(t('address.successUpdated'), 'success');
           setIsModalOpen(false);
           fetchAddresses();
         } else {
-          showToast(data.error || 'Gagal memperbarui alamat', 'error');
+          showToast(data.error || t('errors.somethingWentWrong'), 'error');
         }
       } else {
         // Create
@@ -214,21 +222,20 @@ function AddressesPageContent() {
         });
         const data = await res.json();
         if (data.success) {
-          showToast('Alamat berhasil disimpan!', 'success');
+          showToast(t('address.successCreated'), 'success');
           setIsModalOpen(false);
           await fetchAddresses();
 
           // If in onboarding mode, redirect to shop
           if (isOnboarding) {
-            showToast('Akun & alamat Anda siap! Selamat berbelanja di LUXE.', 'success');
             router.push('/products');
           }
         } else {
-          showToast(data.error || 'Gagal menambahkan alamat', 'error');
+          showToast(data.error || t('errors.somethingWentWrong'), 'error');
         }
       }
     } catch {
-      showToast('Terjadi kesalahan koneksi', 'error');
+      showToast(t('errors.networkError'), 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -244,13 +251,13 @@ function AddressesPageContent() {
       });
       const data = await res.json();
       if (data.success) {
-        showToast('Alamat utama berhasil diperbarui', 'success');
+        showToast(t('address.successDefault'), 'success');
         fetchAddresses();
       } else {
-        showToast(data.error || 'Gagal mengubah alamat utama', 'error');
+        showToast(data.error || t('errors.somethingWentWrong'), 'error');
       }
     } catch {
-      showToast('Terjadi kesalahan koneksi', 'error');
+      showToast(t('errors.networkError'), 'error');
     } finally {
       setSettingDefaultId(null);
     }
@@ -258,7 +265,7 @@ function AddressesPageContent() {
 
   // Delete Address
   const handleDelete = async (addrId: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus alamat ini?')) return;
+    if (!confirm(t('address.confirmDelete'))) return;
     try {
       setDeletingId(addrId);
       const res = await fetch(`/api/addresses/${addrId}`, {
@@ -267,56 +274,113 @@ function AddressesPageContent() {
       });
       const data = await res.json();
       if (data.success) {
-        showToast('Alamat berhasil dihapus', 'success');
+        showToast(t('address.successDeleted'), 'success');
         fetchAddresses();
       } else {
-        showToast(data.error || 'Gagal menghapus alamat', 'error');
+        showToast(data.error || t('errors.somethingWentWrong'), 'error');
       }
     } catch {
-      showToast('Terjadi kesalahan koneksi', 'error');
+      showToast(t('errors.networkError'), 'error');
     } finally {
       setDeletingId(null);
     }
   };
 
   return (
-    <div className="container" style={{ padding: 'var(--space-10) var(--space-6)', minHeight: '80vh' }}>
+    <div
+      className="container"
+      style={{ padding: 'var(--space-10) var(--space-6)', minHeight: '80vh' }}
+    >
       {/* Header Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: '0.8rem', color: 'var(--clr-text-3)', marginBottom: 'var(--space-4)' }}>
-        <a href="/" style={{ color: 'inherit', textDecoration: 'none' }}>Beranda</a>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-2)',
+          fontSize: '0.8rem',
+          color: 'var(--clr-text-3)',
+          marginBottom: 'var(--space-4)',
+        }}
+      >
+        <a href="/" style={{ color: 'inherit', textDecoration: 'none' }}>
+          {t('common.home')}
+        </a>
         <ChevronRight size={14} />
-        <span>Akun</span>
+        <span>{t('nav.userMenu')}</span>
         <ChevronRight size={14} />
-        <span style={{ color: 'var(--clr-gold)' }}>Alamat Pengiriman</span>
+        <span style={{ color: 'var(--clr-gold)' }}>{t('address.title')}</span>
       </div>
 
       {/* Onboarding Banner */}
       {isOnboarding && (
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(201,168,76,0.15) 0%, rgba(20,20,20,0.85) 100%)',
-          border: '1px solid var(--clr-gold-dark)',
-          borderRadius: 'var(--radius-xl)',
-          padding: 'var(--space-6) var(--space-8)',
-          marginBottom: 'var(--space-8)',
-          position: 'relative',
-          overflow: 'hidden',
-          animation: 'fadeIn 0.4s ease',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
+        <div
+          style={{
+            background:
+              'linear-gradient(135deg, rgba(201,168,76,0.15) 0%, rgba(20,20,20,0.85) 100%)',
+            border: '1px solid var(--clr-gold-dark)',
+            borderRadius: 'var(--radius-xl)',
+            padding: 'var(--space-6) var(--space-8)',
+            marginBottom: 'var(--space-8)',
+            position: 'relative',
+            overflow: 'hidden',
+            animation: 'fadeIn 0.4s ease',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 'var(--space-4)',
+            }}
+          >
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
-                <span className="badge badge-gold" style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}>
-                  <Sparkles size={12} style={{ display: 'inline', marginRight: '4px' }} /> Langkah 2 dari 2: Alamat Pengiriman Utama
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-2)',
+                  marginBottom: 'var(--space-2)',
+                }}
+              >
+                <span
+                  className="badge badge-gold"
+                  style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}
+                >
+                  <Sparkles size={12} style={{ display: 'inline', marginRight: '4px' }} />{' '}
+                  {t('address.onboardingTitle')}
                 </span>
               </div>
-              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.6rem', fontWeight: 400, color: '#fff', margin: 'var(--space-2) 0' }}>
-                Selamat Datang di LUXE!
+              <h2
+                style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontSize: '1.6rem',
+                  fontWeight: 400,
+                  color: '#fff',
+                  margin: 'var(--space-2) 0',
+                }}
+              >
+                {t('address.onboardingTitle')}
               </h2>
-              <p style={{ color: 'var(--clr-text-2)', fontSize: '0.9rem', maxWidth: '650px', lineHeight: 1.6 }}>
-                Untuk memastikan kemewahan layanan dan kelancaran pengiriman pesanan Anda, silakan lengkapi alamat pengiriman pertama Anda di bawah ini.
+              <p
+                style={{
+                  color: 'var(--clr-text-2)',
+                  fontSize: '0.9rem',
+                  maxWidth: '650px',
+                  lineHeight: 1.6,
+                }}
+              >
+                {t('address.onboardingDesc')}
               </p>
             </div>
-            <div style={{ background: 'var(--clr-gold-muted)', borderRadius: '50%', padding: 'var(--space-4)', border: '1px solid var(--clr-gold)' }}>
+            <div
+              style={{
+                background: 'var(--clr-gold-muted)',
+                borderRadius: '50%',
+                padding: 'var(--space-4)',
+                border: '1px solid var(--clr-gold)',
+              }}
+            >
               <ShieldCheck size={32} style={{ color: 'var(--clr-gold)' }} />
             </div>
           </div>
@@ -324,13 +388,35 @@ function AddressesPageContent() {
       )}
 
       {/* Main Page Title & Add Button */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-8)', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 'var(--space-8)',
+          flexWrap: 'wrap',
+          gap: 'var(--space-4)',
+        }}
+      >
         <div>
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem', fontWeight: 400, color: 'var(--clr-text)' }}>
-            Daftar Alamat Saya
+          <h1
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontSize: '2rem',
+              fontWeight: 400,
+              color: 'var(--clr-text)',
+            }}
+          >
+            {t('address.title')}
           </h1>
-          <p style={{ color: 'var(--clr-text-2)', fontSize: '0.875rem', marginTop: 'var(--space-1)' }}>
-            Kelola alamat pengiriman tersimpan untuk kemudahan proses checkout belanja.
+          <p
+            style={{
+              color: 'var(--clr-text-2)',
+              fontSize: '0.875rem',
+              marginTop: 'var(--space-1)',
+            }}
+          >
+            {t('address.subtitle')}
           </p>
         </div>
 
@@ -339,58 +425,96 @@ function AddressesPageContent() {
           className="btn btn-primary"
           style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}
         >
-          <Plus size={18} /> Tambah Alamat Baru
+          <Plus size={18} /> {t('address.addNew')}
         </button>
       </div>
 
       {/* Addresses Content */}
       {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-16) 0', gap: 'var(--space-3)' }}>
-          <Loader2 size={32} className="animate-spin" style={{ color: 'var(--clr-gold)' }} />
-          <span style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>Memuat buku alamat...</span>
-        </div>
-      ) : addresses.length === 0 ? (
-        <div style={{
-          textAlign: 'center',
-          padding: 'var(--space-16) var(--space-6)',
-          background: 'var(--clr-bg-2)',
-          borderRadius: 'var(--radius-xl)',
-          border: '1px dashed var(--clr-border)',
-          maxWidth: '600px',
-          margin: '0 auto',
-        }}>
-          <div style={{
-            width: '64px',
-            height: '64px',
-            borderRadius: '50%',
-            background: 'var(--clr-bg-3)',
+        <div
+          style={{
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            margin: '0 auto var(--space-4)',
-            color: 'var(--clr-gold)',
-          }}>
+            padding: 'var(--space-16) 0',
+            gap: 'var(--space-3)',
+          }}
+        >
+          <Loader2 size={32} className="animate-spin" style={{ color: 'var(--clr-gold)' }} />
+          <span style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>
+            {t('common.loading')}
+          </span>
+        </div>
+      ) : addresses.length === 0 ? (
+        <div
+          style={{
+            textAlign: 'center',
+            padding: 'var(--space-16) var(--space-6)',
+            background: 'var(--clr-bg-2)',
+            borderRadius: 'var(--radius-xl)',
+            border: '1px dashed var(--clr-border)',
+            maxWidth: '600px',
+            margin: '0 auto',
+          }}
+        >
+          <div
+            style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'var(--clr-bg-3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto var(--space-4)',
+              color: 'var(--clr-gold)',
+            }}
+          >
             <MapPin size={28} />
           </div>
-          <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', fontWeight: 400, marginBottom: 'var(--space-2)' }}>
-            Belum Ada Alamat Tersimpan
+          <h3
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontSize: '1.3rem',
+              fontWeight: 400,
+              marginBottom: 'var(--space-2)',
+            }}
+          >
+            {t('address.noAddresses')}
           </h3>
-          <p style={{ color: 'var(--clr-text-2)', fontSize: '0.875rem', marginBottom: 'var(--space-6)', maxWidth: '420px', margin: '0 auto var(--space-6)' }}>
-            Tambahkan alamat pengiriman rumah, kantor, atau apartemen Anda agar pesanan dapat diproses secara instan.
+          <p
+            style={{
+              color: 'var(--clr-text-2)',
+              fontSize: '0.875rem',
+              marginBottom: 'var(--space-6)',
+              maxWidth: '420px',
+              margin: '0 auto var(--space-6)',
+            }}
+          >
+            {t('address.noAddressesDesc')}
           </p>
           <button onClick={handleOpenAdd} className="btn btn-primary">
-            <Plus size={16} /> Tambah Alamat Pertama
+            <Plus size={16} /> {t('address.addNew')}
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 'var(--space-6)' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+            gap: 'var(--space-6)',
+          }}
+        >
           {addresses.map((addr) => {
             const isDefault = addr.isDefault;
             return (
               <div
                 key={addr.id}
                 style={{
-                  background: isDefault ? 'linear-gradient(180deg, rgba(201,168,76,0.06) 0%, var(--clr-bg-2) 100%)' : 'var(--clr-bg-2)',
+                  background: isDefault
+                    ? 'linear-gradient(180deg, rgba(201,168,76,0.06) 0%, var(--clr-bg-2) 100%)'
+                    : 'var(--clr-bg-2)',
                   border: `1px solid ${isDefault ? 'var(--clr-gold-dark)' : 'var(--clr-border)'}`,
                   borderRadius: 'var(--radius-lg)',
                   padding: 'var(--space-6)',
@@ -405,7 +529,14 @@ function AddressesPageContent() {
               >
                 {/* Top header */}
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: 'var(--space-3)',
+                    }}
+                  >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                       <span
                         style={{
@@ -420,7 +551,7 @@ function AddressesPageContent() {
                           border: '1px solid var(--clr-border)',
                         }}
                       >
-                        {addr.label || 'Alamat'}
+                        {addr.label || t('address.title')}
                       </span>
                       {isDefault && (
                         <span
@@ -437,7 +568,7 @@ function AddressesPageContent() {
                             gap: '4px',
                           }}
                         >
-                          <CheckCircle2 size={12} /> Alamat Utama
+                          <CheckCircle2 size={12} /> {t('address.defaultBadge')}
                         </span>
                       )}
                     </div>
@@ -448,7 +579,8 @@ function AddressesPageContent() {
                         onClick={() => handleOpenEdit(addr)}
                         className="btn btn-ghost btn-sm"
                         style={{ padding: '6px', color: 'var(--clr-text-2)' }}
-                        title="Ubah Alamat"
+                        title={t('address.edit')}
+                        aria-label={t('address.edit')}
                       >
                         <Edit2 size={15} />
                       </button>
@@ -457,41 +589,90 @@ function AddressesPageContent() {
                         className="btn btn-ghost btn-sm"
                         style={{ padding: '6px', color: 'var(--clr-error)' }}
                         disabled={deletingId === addr.id}
-                        title="Hapus Alamat"
+                        title={t('address.delete')}
+                        aria-label={t('address.delete')}
                       >
-                        {deletingId === addr.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                        {deletingId === addr.id ? (
+                          <Loader2 size={15} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={15} />
+                        )}
                       </button>
                     </div>
                   </div>
 
                   {/* Recipient Details */}
-                  <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--clr-text)', marginBottom: 'var(--space-1)' }}>
+                  <h4
+                    style={{
+                      fontSize: '1rem',
+                      fontWeight: 600,
+                      color: 'var(--clr-text)',
+                      marginBottom: 'var(--space-1)',
+                    }}
+                  >
                     {addr.fullName}
                   </h4>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--clr-text-3)', marginBottom: 'var(--space-3)' }}>
+                  <p
+                    style={{
+                      fontSize: '0.85rem',
+                      color: 'var(--clr-text-3)',
+                      marginBottom: 'var(--space-3)',
+                    }}
+                  >
                     {addr.phone}
                   </p>
 
                   {/* Street & Wilayah Hierarchy */}
-                  <p style={{ fontSize: '0.875rem', color: 'var(--clr-text-2)', lineHeight: 1.5, marginBottom: 'var(--space-2)' }}>
+                  <p
+                    style={{
+                      fontSize: '0.875rem',
+                      color: 'var(--clr-text-2)',
+                      lineHeight: 1.5,
+                      marginBottom: 'var(--space-2)',
+                    }}
+                  >
                     {addr.street}
                   </p>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--clr-text-3)', lineHeight: 1.5 }}>
+                  <p
+                    style={{
+                      fontSize: '0.8rem',
+                      color: 'var(--clr-text-3)',
+                      lineHeight: 1.5,
+                    }}
+                  >
                     {[
-                      addr.village ? `Kel. ${addr.village}` : null,
-                      addr.district ? `Kec. ${addr.district}` : null,
+                      addr.village ? `${locale === 'id' ? 'Kel.' : 'Subdistrict'} ${addr.village}` : null,
+                      addr.district ? `${locale === 'id' ? 'Kec.' : 'District'} ${addr.district}` : null,
                       addr.city,
                       addr.province,
-                      addr.postalCode ? `Kode Pos ${addr.postalCode}` : null,
-                    ].filter(Boolean).join(', ')}
+                      addr.postalCode ? `${t('address.postalCode')} ${addr.postalCode}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(', ')}
                   </p>
                 </div>
 
                 {/* Bottom Action (Set Default) */}
-                <div style={{ paddingTop: 'var(--space-3)', borderTop: '1px solid var(--clr-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div
+                  style={{
+                    paddingTop: 'var(--space-3)',
+                    borderTop: '1px solid var(--clr-border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
                   {isDefault ? (
-                    <span style={{ fontSize: '0.75rem', color: 'var(--clr-gold)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <CheckCircle2 size={14} /> Digunakan sebagai alamat utama
+                    <span
+                      style={{
+                        fontSize: '0.75rem',
+                        color: 'var(--clr-gold)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <CheckCircle2 size={14} /> {t('address.defaultBadge')}
                     </span>
                   ) : (
                     <button
@@ -500,7 +681,11 @@ function AddressesPageContent() {
                       style={{ fontSize: '0.75rem', padding: '0.3rem 0.75rem' }}
                       disabled={settingDefaultId === addr.id}
                     >
-                      {settingDefaultId === addr.id ? <Loader2 size={12} className="animate-spin" /> : 'Jadikan Alamat Utama'}
+                      {settingDefaultId === addr.id ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        t('address.setDefault')
+                      )}
                     </button>
                   )}
                 </div>
@@ -512,68 +697,91 @@ function AddressesPageContent() {
 
       {/* Modal / Slide-over Form */}
       {isModalOpen && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.75)',
-          backdropFilter: 'blur(6px)',
-          zIndex: 9999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 'var(--space-4)',
-        }}>
-          <div style={{
-            background: 'var(--clr-bg-2)',
-            border: '1px solid var(--clr-border)',
-            borderRadius: 'var(--radius-xl)',
-            width: '100%',
-            maxWidth: '620px',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            padding: 'var(--space-8)',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.8)',
-            animation: 'scaleIn 0.25s ease both',
-            position: 'relative',
-          }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(6px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'var(--space-4)',
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--clr-bg-2)',
+              border: '1px solid var(--clr-border)',
+              borderRadius: 'var(--radius-xl)',
+              width: '100%',
+              maxWidth: '620px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: 'var(--space-8)',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.8)',
+              animation: 'scaleIn 0.25s ease both',
+              position: 'relative',
+            }}
+          >
             {/* Modal Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--clr-border)', paddingBottom: 'var(--space-4)' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 'var(--space-6)',
+                borderBottom: '1px solid var(--clr-border)',
+                paddingBottom: 'var(--space-4)',
+              }}
+            >
               <div>
-                <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.4rem', fontWeight: 400 }}>
-                  {editingAddress ? 'Ubah Alamat Pengiriman' : 'Tambah Alamat Pengiriman'}
+                <h3
+                  style={{
+                    fontFamily: 'var(--font-serif)',
+                    fontSize: '1.4rem',
+                    fontWeight: 400,
+                  }}
+                >
+                  {editingAddress ? t('address.editAddress') : t('address.addNew')}
                 </h3>
                 <p style={{ fontSize: '0.8rem', color: 'var(--clr-text-2)', marginTop: '4px' }}>
-                  Isi data penerima dan pilih wilayah pengiriman Indonesia secara presisi.
+                  {t('address.subtitle')}
                 </p>
               </div>
               <button
                 onClick={() => {
                   if (isOnboarding && addresses.length === 0) {
-                    showToast('Harap isi alamat pertama Anda untuk melanjutkan', 'info');
+                    showToast(t('address.onboardingDesc'), 'info');
                   } else {
                     setIsModalOpen(false);
                   }
                 }}
                 className="btn btn-ghost btn-sm"
                 style={{ padding: '6px', color: 'var(--clr-text-3)' }}
+                aria-label={t('common.close')}
               >
                 <X size={20} />
               </button>
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+            <form
+              onSubmit={handleSubmit}
+              style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}
+            >
               {/* Label Selection */}
               <div className="input-group">
-                <label className="input-label">Label Alamat</label>
+                <label className="input-label">{t('address.label')}</label>
                 <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                  {LABEL_PRESETS.map(({ label, icon: Icon }) => {
-                    const isSelected = form.label === label;
+                  {labelPresets.map(({ key, label, icon: Icon }) => {
+                    const isSelected = form.labelKey === key;
                     return (
                       <button
-                        key={label}
+                        key={key}
                         type="button"
-                        onClick={() => setForm((p) => ({ ...p, label }))}
+                        onClick={() => setForm((p) => ({ ...p, labelKey: key }))}
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
@@ -594,11 +802,11 @@ function AddressesPageContent() {
                     );
                   })}
                 </div>
-                {form.label === 'Lainnya' && (
+                {form.labelKey === 'other' && (
                   <input
                     className="input"
                     style={{ marginTop: 'var(--space-2)' }}
-                    placeholder="Contoh: Villa, Kost, Gudang"
+                    placeholder={t('address.customLabel')}
                     value={form.customLabel}
                     onChange={(e) => setForm((p) => ({ ...p, customLabel: e.target.value }))}
                   />
@@ -606,23 +814,39 @@ function AddressesPageContent() {
               </div>
 
               {/* Recipient info */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 'var(--space-4)',
+                }}
+              >
                 <div className="input-group">
-                  <label className="input-label">Nama Lengkap Penerima <span style={{ color: 'var(--clr-error)' }}>*</span></label>
+                  <label className="input-label">
+                    {t('address.fullName')}{' '}
+                    <span style={{ color: 'var(--clr-error)' }}>*</span>
+                  </label>
                   <input
                     className={`input ${formErrors.fullName ? 'error' : ''}`}
-                    placeholder="Contoh: Sarah Johnson"
+                    placeholder="John Doe"
                     value={form.fullName}
                     onChange={(e) => {
                       setForm((p) => ({ ...p, fullName: e.target.value }));
                       setFormErrors((p) => ({ ...p, fullName: '' }));
                     }}
                   />
-                  {formErrors.fullName && <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>{formErrors.fullName}</span>}
+                  {formErrors.fullName && (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>
+                      {formErrors.fullName}
+                    </span>
+                  )}
                 </div>
 
                 <div className="input-group">
-                  <label className="input-label">Nomor Handphone <span style={{ color: 'var(--clr-error)' }}>*</span></label>
+                  <label className="input-label">
+                    {t('address.phone')}{' '}
+                    <span style={{ color: 'var(--clr-error)' }}>*</span>
+                  </label>
                   <input
                     className={`input ${formErrors.phone ? 'error' : ''}`}
                     placeholder="08123456789"
@@ -632,16 +856,23 @@ function AddressesPageContent() {
                       setFormErrors((p) => ({ ...p, phone: '' }));
                     }}
                   />
-                  {formErrors.phone && <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>{formErrors.phone}</span>}
+                  {formErrors.phone && (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>
+                      {formErrors.phone}
+                    </span>
+                  )}
                 </div>
               </div>
 
               {/* Street Address */}
               <div className="input-group">
-                <label className="input-label">Alamat Lengkap / Jalan <span style={{ color: 'var(--clr-error)' }}>*</span></label>
+                <label className="input-label">
+                  {t('address.street')}{' '}
+                  <span style={{ color: 'var(--clr-error)' }}>*</span>
+                </label>
                 <textarea
                   className={`input ${formErrors.street ? 'error' : ''}`}
-                  placeholder="Nama jalan, nomor gedung/rumah, nomor lantai/unit, RT/RW, patokan"
+                  placeholder={t('address.streetPlaceholder')}
                   rows={2}
                   style={{ resize: 'vertical' }}
                   value={form.street}
@@ -650,13 +881,21 @@ function AddressesPageContent() {
                     setFormErrors((p) => ({ ...p, street: '' }));
                   }}
                 />
-                {formErrors.street && <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>{formErrors.street}</span>}
+                {formErrors.street && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>
+                    {formErrors.street}
+                  </span>
+                )}
               </div>
 
               {/* Cascading Wilayah Selection */}
               <div>
-                <label className="input-label" style={{ marginBottom: 'var(--space-2)', display: 'block' }}>
-                  Wilayah Pengiriman (Indonesia) <span style={{ color: 'var(--clr-error)' }}>*</span>
+                <label
+                  className="input-label"
+                  style={{ marginBottom: 'var(--space-2)', display: 'block' }}
+                >
+                  {t('checkout.stepAddress')} (Indonesia){' '}
+                  <span style={{ color: 'var(--clr-error)' }}>*</span>
                 </label>
                 <WilayahSelect
                   initialValue={{
@@ -684,7 +923,10 @@ function AddressesPageContent() {
 
               {/* Postal Code Display & Custom Edit */}
               <div className="input-group" style={{ maxWidth: '200px' }}>
-                <label className="input-label">Kode Pos <span style={{ color: 'var(--clr-error)' }}>*</span></label>
+                <label className="input-label">
+                  {t('address.postalCode')}{' '}
+                  <span style={{ color: 'var(--clr-error)' }}>*</span>
+                </label>
                 <input
                   className={`input ${formErrors.postalCode ? 'error' : ''}`}
                   placeholder="12345"
@@ -694,25 +936,51 @@ function AddressesPageContent() {
                     setFormErrors((p) => ({ ...p, postalCode: '' }));
                   }}
                 />
-                {formErrors.postalCode && <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>{formErrors.postalCode}</span>}
+                {formErrors.postalCode && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>
+                    {formErrors.postalCode}
+                  </span>
+                )}
               </div>
 
               {/* Default Checkbox */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', cursor: 'pointer', marginTop: 'var(--space-2)' }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-3)',
+                  cursor: 'pointer',
+                  marginTop: 'var(--space-2)',
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={form.isDefault || addresses.length === 0}
                   disabled={addresses.length === 0}
                   onChange={(e) => setForm((p) => ({ ...p, isDefault: e.target.checked }))}
-                  style={{ accentColor: 'var(--clr-gold)', width: '18px', height: '18px', cursor: 'pointer' }}
+                  style={{
+                    accentColor: 'var(--clr-gold)',
+                    width: '18px',
+                    height: '18px',
+                    cursor: 'pointer',
+                  }}
                 />
                 <span style={{ fontSize: '0.875rem', color: 'var(--clr-text)' }}>
-                  Jadikan sebagai alamat pengiriman utama
+                  {t('address.isDefaultCheckbox')}
                 </span>
               </label>
 
               {/* Modal Actions */}
-              <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'flex-end', marginTop: 'var(--space-6)', borderTop: '1px solid var(--clr-border)', paddingTop: 'var(--space-4)' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 'var(--space-3)',
+                  justifyContent: 'flex-end',
+                  marginTop: 'var(--space-6)',
+                  borderTop: '1px solid var(--clr-border)',
+                  paddingTop: 'var(--space-4)',
+                }}
+              >
                 {(!isOnboarding || addresses.length > 0) && (
                   <button
                     type="button"
@@ -720,7 +988,7 @@ function AddressesPageContent() {
                     className="btn btn-ghost"
                     disabled={isSubmitting}
                   >
-                    Batal
+                    {t('common.cancel')}
                   </button>
                 )}
                 <button
@@ -732,9 +1000,11 @@ function AddressesPageContent() {
                   {isSubmitting ? (
                     <Loader2 size={18} className="animate-spin" />
                   ) : editingAddress ? (
-                    'Simpan Perubahan'
+                    t('common.save')
                   ) : (
-                    <>Simpan Alamat <ArrowRight size={16} /></>
+                    <>
+                      {t('address.save')} <ArrowRight size={16} />
+                    </>
                   )}
                 </button>
               </div>
@@ -748,11 +1018,20 @@ function AddressesPageContent() {
 
 export default function AddressesPage() {
   return (
-    <Suspense fallback={
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Loader2 size={32} className="animate-spin" style={{ color: 'var(--clr-gold)' }} />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '60vh',
+          }}
+        >
+          <Loader2 size={32} className="animate-spin" style={{ color: 'var(--clr-gold)' }} />
+        </div>
+      }
+    >
       <AddressesPageContent />
     </Suspense>
   );

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 // ============================================================
 // WilayahSelect - Cascading dropdown untuk wilayah Indonesia
 // Provinsi -> Kabupaten/Kota -> Kecamatan -> Kelurahan + Kode Pos
@@ -6,6 +6,7 @@
 // ============================================================
 import { useState, useEffect, useCallback } from 'react';
 import { MapPin, Loader2, AlertCircle } from 'lucide-react';
+import { useT } from '@/i18n/LanguageProvider';
 
 // --- Types ---------------------------------------------------
 interface WilayahItem {
@@ -110,6 +111,7 @@ export default function WilayahSelect({
   errors = {},
   apiBase = DEFAULT_API,
 }: Props) {
+  const { t, locale } = useT();
   // Selected IDs (for cascading logic)
   const [provinceId, setProvinceId] = useState('');
   const [regencyId, setRegencyId] = useState('');
@@ -290,30 +292,30 @@ export default function WilayahSelect({
       {/* 2-column dropdown grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
         <WilayahDropdown
-          id="wilayah-province" label="Provinsi"
+          id="wilayah-province" label={t('address.province')}
           value={provinceId} options={provinces}
-          placeholder={loadingProv ? 'Memuat...' : '— Pilih Provinsi —'}
+          placeholder={loadingProv ? t('common.loading') : t('address.selectProvince')}
           disabled={disabled || loadingProv} loading={loadingProv}
           error={errors.province} onChange={handleProvinceChange}
         />
         <WilayahDropdown
-          id="wilayah-regency" label="Kabupaten / Kota"
+          id="wilayah-regency" label={t('address.city')}
           value={regencyId} options={regencies}
-          placeholder={!provinceId ? '— Pilih provinsi dulu —' : loadingReg ? 'Memuat...' : '— Pilih Kab/Kota —'}
+          placeholder={!provinceId ? t('address.firstSelectProvince') : loadingReg ? t('common.loading') : t('address.selectCity')}
           disabled={disabled || !provinceId || loadingReg} loading={loadingReg}
           error={errors.regency} onChange={handleRegencyChange}
         />
         <WilayahDropdown
-          id="wilayah-district" label="Kecamatan"
+          id="wilayah-district" label={t('address.district')}
           value={districtId} options={districts}
-          placeholder={!regencyId ? '— Pilih kab/kota dulu —' : loadingDist ? 'Memuat...' : '— Pilih Kecamatan —'}
+          placeholder={!regencyId ? t('address.firstSelectCity') : loadingDist ? t('common.loading') : t('address.selectDistrict')}
           disabled={disabled || !regencyId || loadingDist} loading={loadingDist}
           error={errors.district} onChange={handleDistrictChange}
         />
         <WilayahDropdown
-          id="wilayah-village" label="Kelurahan / Desa"
+          id="wilayah-village" label={t('address.village')}
           value={villageId} options={villages}
-          placeholder={!districtId ? '— Pilih kecamatan dulu —' : loadingVil ? 'Memuat...' : '— Pilih Kelurahan —'}
+          placeholder={!districtId ? t('address.firstSelectDistrict') : loadingVil ? t('common.loading') : t('address.selectVillage')}
           disabled={disabled || !districtId || loadingVil} loading={loadingVil}
           error={errors.village} onChange={handleVillageChange}
         />
@@ -323,9 +325,9 @@ export default function WilayahSelect({
       {villageId && (
         <div className="input-group" style={{ animation: 'fadeIn 0.3s both' }}>
           <label className="input-label" htmlFor="wilayah-postal">
-            Kode Pos{' '}
+            {t('address.postalCode')}{' '}
             <span style={{ color: 'var(--clr-gold)', marginLeft: 4, fontSize: '0.6rem' }}>
-              ● OTOMATIS
+              ● {locale === 'id' ? 'OTOMATIS' : 'AUTO'}
             </span>
           </label>
           <input

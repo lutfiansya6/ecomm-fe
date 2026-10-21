@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import './globals.css';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import CartDrawer from '@/components/cart/CartDrawer';
 import ToastProvider from '@/components/ui/ToastProvider';
+import LanguageProvider from '@/i18n/LanguageProvider';
+import type { Locale } from '@/i18n';
 
 export const metadata: Metadata = {
   title: 'LUXE — Redefined Elegance',
@@ -17,15 +20,21 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
+  const rawLocale = cookieStore.get('locale')?.value;
+  const locale: Locale = rawLocale === 'id' ? 'id' : 'en';
+
   return (
-    <html lang="id">
+    <html lang={locale}>
       <body>
-        <Navbar />
-        <main className="page">{children}</main>
-        <Footer />
-        <CartDrawer />
-        <ToastProvider />
+        <LanguageProvider initialLocale={locale}>
+          <Navbar />
+          <main className="page">{children}</main>
+          <Footer />
+          <CartDrawer />
+          <ToastProvider />
+        </LanguageProvider>
       </body>
     </html>
   );

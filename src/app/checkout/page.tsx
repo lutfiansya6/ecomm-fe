@@ -34,7 +34,9 @@ import {
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { useToast } from '@/components/ui/ToastProvider';
-import { formatPrice } from '@/lib/utils';
+import { getImageUrl, DEFAULT_PLACEHOLDER_IMAGE } from '@/lib/utils';
+import { useT } from '@/i18n/LanguageProvider';
+import { getCartItemImage } from '@/lib/colors';
 import type { Address, PaymentResult, UserAddress, ShippingCostOption, ShippingDestination } from '@/types';
 import WilayahSelect, { type WilayahValue } from '@/components/ui/WilayahSelect';
 
@@ -46,6 +48,7 @@ const QRIS_DURATION_SECONDS = 15 * 60; // 15 minutes countdown
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const { t, locale, formatPrice } = useT();
   const { items, totalPrice, clearCart } = useCartStore();
   const { user, token } = useAuthStore();
   const { showToast } = useToast();
@@ -101,6 +104,7 @@ export default function CheckoutPage() {
   );
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
@@ -137,7 +141,7 @@ export default function CheckoutPage() {
       const destData = await destRes.json();
 
       if (!destData.success || !Array.isArray(destData.data) || destData.data.length === 0) {
-        setShippingError('Lokasi tujuan tidak ditemukan di RajaOngkir. Pastikan kecamatan atau kota terisi dengan benar.');
+        setShippingError(t('checkout.shippingDestNotFound'));
         setShippingOptions([]);
         setSelectedShipping(null);
         setLoadingShipping(false);
@@ -168,18 +172,18 @@ export default function CheckoutPage() {
         setShippingOptions(options);
         setSelectedShipping(options[0]);
       } else {
-        setShippingError('Gagal menghitung ongkos kirim. Silakan coba lagi.');
+        setShippingError(t('checkout.shippingCalcError'));
         setShippingOptions([]);
         setSelectedShipping(null);
       }
     } catch {
-      setShippingError('Gagal menghubungkan ke layanan ongkos kirim RajaOngkir.');
+      setShippingError(t('checkout.shippingNetworkError'));
       setShippingOptions([]);
       setSelectedShipping(null);
     } finally {
       setLoadingShipping(false);
     }
-  }, [totalWeight]);
+  }, [totalWeight, t]);
 
   // Fetch saved addresses on mount
   useEffect(() => {
@@ -229,10 +233,15 @@ export default function CheckoutPage() {
   }, [mounted, token, fetchShippingRates]);
 
   useEffect(() => {
-    if (mounted && items.length === 0 && step === 'address') {
-      router.push('/cart');
+    if (mounted && step === 'address') {
+      if (items.length === 0) {
+        router.push('/cart');
+      } else if (items.some((i) => i.quantity <= 0)) {
+        showToast(t('checkout.outOfStockErrorCart'), 'error');
+        router.push('/cart');
+      }
     }
-  }, [mounted, items, step, router]);
+  }, [mounted, items, step, router, showToast, t]);
 
   if (!mounted) return null;
 
@@ -265,32 +274,32 @@ export default function CheckoutPage() {
   const validateAddress = () => {
     if (addressMode === 'saved') {
       if (!selectedAddressId) {
-        showToast('Pilih salah satu alamat pengiriman', 'error');
+        showToast(t('checkout.selectAddressToast'), 'error');
         return false;
       }
       if (!selectedShipping) {
-        showToast('Pilih salah satu layanan kurir pengiriman', 'error');
+        showToast(t('checkout.selectCourierToast'), 'error');
         return false;
       }
       return true;
     }
 
     const e: Record<string, string> = {};
-    if (!address.fullName.trim()) e.fullName = 'Nama wajib diisi';
-    if (!address.phone || address.phone.length < 9) e.phone = 'Nomor HP tidak valid';
-    if (!address.street.trim()) e.street = 'Alamat lengkap wajib diisi';
-    if (!address.postalCode || address.postalCode.length < 5) e.postalCode = 'Kode pos tidak valid';
+    if (!address.fullName.trim()) e.fullName = t('checkout.validationName');
+    if (!address.phone || address.phone.length < 9) e.phone = t('checkout.validationPhone');
+    if (!address.street.trim()) e.street = t('checkout.validationStreet');
+    if (!address.postalCode || address.postalCode.length < 5) e.postalCode = t('checkout.validationPostal');
     setAddrErrors(e);
 
     const we: Partial<Record<keyof WilayahValue, string>> = {};
-    if (!address.province) we.province = 'Provinsi wajib dipilih';
-    if (!address.city) we.regency = 'Kabupaten/Kota wajib dipilih';
-    if (!address.district) we.district = 'Kecamatan wajib dipilih';
-    if (!address.village) we.village = 'Kelurahan wajib dipilih';
+    if (!address.province) we.province = t('checkout.validationProvince');
+    if (!address.city) we.regency = t('checkout.validationRegency');
+    if (!address.district) we.district = t('checkout.validationDistrict');
+    if (!address.village) we.village = t('checkout.validationVillage');
     setWilayahErrors(we);
 
     if (!selectedShipping) {
-      showToast('Pilih salah satu layanan kurir pengiriman', 'error');
+      showToast(t('checkout.selectCourierToast'), 'error');
       return false;
     }
 
@@ -301,10 +310,10 @@ export default function CheckoutPage() {
     if (paymentMethod !== 'credit_card') return true;
     const e: Record<string, string> = {};
     const clean = card.number.replace(/\s/g, '');
-    if (!clean || clean.length < 13) e.number = 'Nomor kartu tidak valid';
-    if (!card.expiry || !/^\d{2}\/\d{2}$/.test(card.expiry)) e.expiry = 'Format: MM/YY';
-    if (!card.cvv || card.cvv.length < 3) e.cvv = 'CVV tidak valid';
-    if (!card.name.trim()) e.name = 'Nama pemegang kartu wajib diisi';
+    if (!clean || clean.length < 13) e.number = t('checkout.validationCardNumber');
+    if (!card.expiry || !/^\d{2}\/\d{2}$/.test(card.expiry)) e.expiry = t('checkout.validationCardExpiry');
+    if (!card.cvv || card.cvv.length < 3) e.cvv = t('checkout.validationCardCvv');
+    if (!card.name.trim()) e.name = t('checkout.validationCardName');
     setCardErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -332,7 +341,7 @@ export default function CheckoutPage() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            label: newAddressLabel || 'Alamat',
+            label: newAddressLabel || t('checkout.addressLabel'),
             fullName: address.fullName,
             phone: address.phone,
             street: address.street,
@@ -356,10 +365,10 @@ export default function CheckoutPage() {
   // Check QRIS Payment Status (Simulated polling)
   const handleCheckQrisStatus = async () => {
     setIsCheckingStatus(true);
-    showToast('Memeriksa status pembayaran di jaringan QRIS...', 'info');
+    showToast(t('checkout.qrisCheckingToast'), 'info');
     await new Promise((r) => setTimeout(r, 1500));
     setIsCheckingStatus(false);
-    showToast('Pembayaran belum terdeteksi. Silakan scan QR code dan selesaikan transfer.', 'info');
+    showToast(t('checkout.qrisNotDetected'), 'info');
   };
 
   // Simulate Payment Success (Dev mode helper)
@@ -389,7 +398,22 @@ export default function CheckoutPage() {
           }),
         });
         const orderData = await orderRes.json();
-        if (!orderData.success) throw new Error(orderData.error);
+        if (!orderData.success) {
+          const errMsg = orderData.error || t('checkout.orderCreateFailed');
+          showToast(errMsg, 'error');
+
+          const isStockError =
+            /stok/i.test(errMsg) ||
+            /tidak mencukupi/i.test(errMsg) ||
+            /habis/i.test(errMsg) ||
+            /out of stock/i.test(errMsg);
+
+          if (isStockError) {
+            router.push(`/cart?stockError=${encodeURIComponent(errMsg)}`);
+            return;
+          }
+          throw new Error(errMsg);
+        }
         currentOrderId = orderData.data.id;
         setOrderId(currentOrderId);
       }
@@ -414,8 +438,9 @@ export default function CheckoutPage() {
       setPaymentResult(payData.data);
       if (payData.data?.success) clearCart();
       setStep('result');
-    } catch {
-      showToast('Gagal memproses simulasi pembayaran.', 'error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : t('checkout.paymentProcessError');
+      showToast(msg, 'error');
       setStep('payment');
     } finally {
       setIsSubmitting(false);
@@ -447,7 +472,22 @@ export default function CheckoutPage() {
         }),
       });
       const orderData = await orderRes.json();
-      if (!orderData.success) throw new Error(orderData.error);
+      if (!orderData.success) {
+        const errMsg = orderData.error || t('checkout.orderCreateFailed');
+        showToast(errMsg, 'error');
+
+        const isStockError =
+          /stok/i.test(errMsg) ||
+          /tidak mencukupi/i.test(errMsg) ||
+          /habis/i.test(errMsg) ||
+          /out of stock/i.test(errMsg);
+
+        if (isStockError) {
+          router.push(`/cart?stockError=${encodeURIComponent(errMsg)}`);
+          return;
+        }
+        throw new Error(errMsg);
+      }
       const newOrderId = orderData.data.id;
       setOrderId(newOrderId);
 
@@ -474,13 +514,16 @@ export default function CheckoutPage() {
       setPaymentResult(payData.data);
       if (payData.data?.success) clearCart();
       setStep('result');
-    } catch {
-      showToast('Terjadi kesalahan proses pembayaran. Coba lagi.', 'error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : t('checkout.paymentProcessError');
+      showToast(msg, 'error');
       setStep('payment');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  if (!mounted) return null;
 
   return (
     <div className="container" style={{ padding: 'var(--space-10) var(--space-6)', minHeight: '80vh' }}>
@@ -488,8 +531,8 @@ export default function CheckoutPage() {
       {step !== 'processing' && step !== 'result' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-10)', maxWidth: '480px' }}>
           {[
-            { key: 'address', label: '1. Alamat & Pengiriman' },
-            { key: 'payment', label: '2. Pembayaran' },
+            { key: 'address', label: t('checkout.step1Label') },
+            { key: 'payment', label: t('checkout.step2Label') },
           ].map((s, i) => (
             <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flex: i === 0 ? 'none' : 1 }}>
               {i > 0 && <div style={{ flex: 1, height: '1px', background: step === 'payment' ? 'var(--clr-gold)' : 'var(--clr-border)' }} />}
@@ -518,8 +561,8 @@ export default function CheckoutPage() {
             <Loader2 size={36} className="animate-spin" style={{ color: 'var(--clr-gold)' }} />
           </div>
           <div style={{ textAlign: 'center' }}>
-            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.75rem', fontWeight: 400, marginBottom: 'var(--space-3)' }}>Memproses Pembayaran</h2>
-            <p style={{ color: 'var(--clr-text-2)' }}>Harap tunggu sejenak, verifikasi transaksi pembayaran Anda...</p>
+            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.75rem', fontWeight: 400, marginBottom: 'var(--space-3)' }}>{t('checkout.processingPayment')}</h2>
+            <p style={{ color: 'var(--clr-text-2)' }}>{t('checkout.processingPaymentDesc')}</p>
           </div>
         </div>
       )}
@@ -539,19 +582,19 @@ export default function CheckoutPage() {
 
           <div style={{ textAlign: 'center', maxWidth: '480px' }}>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem', fontWeight: 400, marginBottom: 'var(--space-3)' }}>
-              {paymentResult.success ? 'Pembayaran Berhasil!' : 'Pembayaran Gagal'}
+              {paymentResult.success ? t('checkout.paymentSuccess') : t('checkout.paymentFailed')}
             </h2>
             <p style={{ color: 'var(--clr-text-2)', marginBottom: 'var(--space-4)' }}>{paymentResult.message}</p>
 
             <div className="card" style={{ padding: 'var(--space-5)', textAlign: 'left', marginBottom: 'var(--space-6)' }}>
               {[
-                { label: 'Order ID', value: orderId || 'ORD-LUXE-DEMO' },
-                { label: 'Transaction ID', value: paymentResult.transactionId },
-                { label: 'Kurir Pengiriman', value: `${selectedShipping?.name || 'Kurir'} - ${selectedShipping?.service || 'REG'} (${selectedShipping?.etd || 'Estimasi tiba'})` },
-                { label: 'Ongkos Kirim', value: formatPrice(selectedShipping?.cost || 0) },
-                { label: 'Total Pembayaran', value: formatPrice(paymentResult.amount) },
-                { label: 'Metode', value: paymentResult.method === 'gopay' || paymentResult.method === 'qris' ? 'QRIS / GoPay' : paymentResult.method === 'credit_card' ? 'Kartu Kredit' : 'COD' },
-                { label: 'Alamat Kirim', value: `${address.fullName} - ${address.city}, ${address.province}` },
+                { label: t('checkout.orderId'), value: orderId || 'ORD-LUXE-DEMO' },
+                { label: t('checkout.transactionId'), value: paymentResult.transactionId },
+                { label: t('checkout.courier'), value: `${selectedShipping?.name || 'Kurir'} - ${selectedShipping?.service || 'REG'} (${selectedShipping?.etd || ''})` },
+                { label: t('checkout.shippingCost'), value: formatPrice(selectedShipping?.cost || 0) },
+                { label: t('checkout.total'), value: formatPrice(paymentResult.amount) },
+                { label: t('account.paymentStatus'), value: paymentResult.method === 'gopay' || paymentResult.method === 'qris' ? t('checkout.qris') : paymentResult.method === 'credit_card' ? t('checkout.creditCard') : t('checkout.cod') },
+                { label: t('account.deliveryAddress'), value: `${address.fullName} - ${address.city}, ${address.province}` },
               ].map(({ label, value }) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--space-2) 0', borderBottom: '1px solid var(--clr-border)' }}>
                   <span style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>{label}</span>
@@ -563,13 +606,13 @@ export default function CheckoutPage() {
             <div style={{ display: 'flex', gap: 'var(--space-4)', justifyContent: 'center' }}>
               {paymentResult.success ? (
                 <>
-                  <button className="btn btn-primary" onClick={() => router.push('/orders')}>Lihat Pesanan</button>
-                  <button className="btn btn-ghost" onClick={() => router.push('/products')}>Lanjut Belanja</button>
+                  <button className="btn btn-primary" onClick={() => router.push('/orders')}>{t('checkout.viewOrder')}</button>
+                  <button className="btn btn-ghost" onClick={() => router.push('/products')}>{t('checkout.continueShopping')}</button>
                 </>
               ) : (
                 <>
-                  <button className="btn btn-primary" onClick={() => setStep('payment')}>Coba Lagi</button>
-                  <button className="btn btn-ghost" onClick={() => router.push('/')}>Kembali ke Beranda</button>
+                  <button className="btn btn-primary" onClick={() => setStep('payment')}>{t('checkout.retryPayment')}</button>
+                  <button className="btn btn-ghost" onClick={() => router.push('/')}>{t('checkout.backToHome')}</button>
                 </>
               )}
             </div>
@@ -583,16 +626,16 @@ export default function CheckoutPage() {
           <div>
             {/* Address Selection Section */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-6)' }}>
-              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', fontWeight: 400 }}>Alamat Pengiriman</h2>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', fontWeight: 400 }}>{t('checkout.stepAddress')}</h2>
               <Link href="/addresses" style={{ fontSize: '0.8rem', color: 'var(--clr-gold)', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}>
-                Buku Alamat <ExternalLink size={13} />
+                {t('address.title')} <ExternalLink size={13} />
               </Link>
             </div>
 
             {loadingAddresses ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-8) 0' }}>
                 <Loader2 size={20} className="animate-spin" style={{ color: 'var(--clr-gold)' }} />
-                <span style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>Memeriksa alamat tersimpan Anda...</span>
+                <span style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>{t('checkout.checkingAddresses')}</span>
               </div>
             ) : savedAddresses.length > 0 && addressMode === 'saved' ? (
               /* Mode A: Choose from Saved Addresses */
@@ -626,11 +669,11 @@ export default function CheckoutPage() {
                               color: 'var(--clr-text-2)',
                               border: '1px solid var(--clr-border)',
                             }}>
-                              {saved.label || 'Alamat'}
+                              {saved.label || t('checkout.addressLabel')}
                             </span>
                             {saved.isDefault && (
                               <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--clr-gold)', background: 'rgba(201,168,76,0.15)', padding: '0.15rem 0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--clr-gold)' }}>
-                                Utama
+                                {t('address.defaultBadge')}
                               </span>
                             )}
                           </div>
@@ -684,7 +727,7 @@ export default function CheckoutPage() {
                     className="btn btn-outline btn-sm"
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}
                   >
-                    <Plus size={15} /> Gunakan Alamat Lain / Baru
+                    <Plus size={15} /> {t('checkout.useOtherAddress')}
                   </button>
                 </div>
               </div>
@@ -702,16 +745,16 @@ export default function CheckoutPage() {
                     className="btn btn-ghost btn-sm"
                     style={{ marginBottom: 'var(--space-4)', display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--clr-gold)' }}
                   >
-                    <ArrowLeft size={15} /> Pilih dari Alamat Tersimpan ({savedAddresses.length})
+                    <ArrowLeft size={15} /> {t('checkout.selectFromSaved', { count: savedAddresses.length })}
                   </button>
                 )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-5)' }}>
                   <div className="input-group" style={{ gridColumn: '1 / -1' }}>
-                    <label className="input-label">Nama Lengkap Penerima</label>
+                    <label className="input-label">{t('checkout.recipientName')}</label>
                     <input
                       className={`input ${addrErrors.fullName ? 'error' : ''}`}
-                      placeholder="Contoh: Sarah Johnson"
+                      placeholder={t('checkout.nameExample')}
                       value={address.fullName}
                       onChange={(e) => {
                         setAddress((p) => ({ ...p, fullName: e.target.value }));
@@ -722,7 +765,7 @@ export default function CheckoutPage() {
                   </div>
 
                   <div className="input-group" style={{ gridColumn: '1 / -1' }}>
-                    <label className="input-label">Nomor Handphone</label>
+                    <label className="input-label">{t('address.phone')}</label>
                     <input
                       className={`input ${addrErrors.phone ? 'error' : ''}`}
                       placeholder="08123456789"
@@ -736,10 +779,10 @@ export default function CheckoutPage() {
                   </div>
 
                   <div className="input-group" style={{ gridColumn: '1 / -1' }}>
-                    <label className="input-label">Alamat Lengkap / Jalan</label>
+                    <label className="input-label">{t('checkout.fullStreet')}</label>
                     <textarea
                       className={`input ${addrErrors.street ? 'error' : ''}`}
-                      placeholder="Nama jalan, nomor rumah, gedung/lantai, RT/RW"
+                      placeholder={t('checkout.fullStreetPlaceholder')}
                       rows={2}
                       value={address.street}
                       onChange={(e) => {
@@ -779,7 +822,7 @@ export default function CheckoutPage() {
                 {/* Kode pos readonly/auto-fill */}
                 {address.postalCode && (
                   <div className="input-group" style={{ marginTop: 'var(--space-4)', maxWidth: '200px' }}>
-                    <label className="input-label">Kode Pos</label>
+                    <label className="input-label">{t('address.postalCode')}</label>
                     <input
                       className="input"
                       value={address.postalCode}
@@ -800,29 +843,34 @@ export default function CheckoutPage() {
                         style={{ accentColor: 'var(--clr-gold)', width: '18px', height: '18px', cursor: 'pointer' }}
                       />
                       <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
-                        Simpan sebagai alamat utama saya
+                        {t('checkout.saveAsDefault')}
                       </span>
                     </label>
 
                     {saveToAccount && (
                       <div style={{ marginTop: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--clr-text-2)' }}>Simpan sebagai:</span>
-                        {['Rumah', 'Kantor', 'Apartemen', 'Lainnya'].map((lbl) => (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--clr-text-2)' }}>{t('checkout.saveAs')}</span>
+                        {[
+                          { key: 'Rumah', label: t('checkout.home') },
+                          { key: 'Kantor', label: t('checkout.office') },
+                          { key: 'Apartemen', label: t('checkout.apartment') },
+                          { key: 'Lainnya', label: t('checkout.other') },
+                        ].map(({ key, label }) => (
                           <button
-                            key={lbl}
+                            key={key}
                             type="button"
-                            onClick={() => setNewAddressLabel(lbl)}
+                            onClick={() => setNewAddressLabel(key)}
                             style={{
                               padding: '0.2rem 0.6rem',
                               borderRadius: 'var(--radius-sm)',
                               fontSize: '0.75rem',
-                              border: `1px solid ${newAddressLabel === lbl ? 'var(--clr-gold)' : 'var(--clr-border)'}`,
-                              background: newAddressLabel === lbl ? 'var(--clr-gold)' : 'var(--clr-bg-2)',
-                              color: newAddressLabel === lbl ? '#000' : 'var(--clr-text-2)',
+                              border: `1px solid ${newAddressLabel === key ? 'var(--clr-gold)' : 'var(--clr-border)'}`,
+                              background: newAddressLabel === key ? 'var(--clr-gold)' : 'var(--clr-bg-2)',
+                              color: newAddressLabel === key ? '#000' : 'var(--clr-text-2)',
                               cursor: 'pointer',
                             }}
                           >
-                            {lbl}
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -838,12 +886,12 @@ export default function CheckoutPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                   <Truck size={20} style={{ color: 'var(--clr-gold)' }} />
                   <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 400 }}>
-                    Layanan Pengiriman (RajaOngkir)
+                    {t('checkout.shippingRajaOngkir')}
                   </h3>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--clr-text-3)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <Scale size={13} /> Total Berat: {(totalWeight / 1000).toFixed(1)} kg ({totalWeight.toLocaleString()} gr)
+                    <Scale size={13} /> {t('checkout.totalWeight')}: {(totalWeight / 1000).toFixed(1)} kg ({totalWeight.toLocaleString(locale === 'id' ? 'id-ID' : 'en-US')} gr)
                   </span>
                   {(address.district || address.city) && (
                     <button
@@ -851,9 +899,9 @@ export default function CheckoutPage() {
                       onClick={() => fetchShippingRates(address)}
                       className="btn btn-ghost btn-sm"
                       style={{ padding: '4px 8px', fontSize: '0.75rem', color: 'var(--clr-gold)' }}
-                      title="Hitung Ulang Ongkir"
+                      title={t('checkout.shippingOptions')}
                     >
-                      <RefreshCw size={13} className={loadingShipping ? 'animate-spin' : ''} /> Refresh
+                      <RefreshCw size={13} className={loadingShipping ? 'animate-spin' : ''} /> {t('common.retry')}
                     </button>
                   )}
                 </div>
@@ -862,7 +910,7 @@ export default function CheckoutPage() {
               {loadingShipping ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-8) 0', gap: 'var(--space-3)' }}>
                   <Loader2 size={24} className="animate-spin" style={{ color: 'var(--clr-gold)' }} />
-                  <span style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>Menghitung ongkos kirim resmi RajaOngkir...</span>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>{t('checkout.calculatingShipping')}</span>
                 </div>
               ) : shippingError ? (
                 <div style={{
@@ -884,12 +932,12 @@ export default function CheckoutPage() {
                     className="btn btn-outline btn-sm"
                     style={{ alignSelf: 'flex-start', marginTop: 'var(--space-1)', fontSize: '0.75rem' }}
                   >
-                    Coba Hitung Lagi
+                    {t('common.retry')}
                   </button>
                 </div>
               ) : shippingOptions.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 'var(--space-6) 0', color: 'var(--clr-text-3)', fontSize: '0.85rem' }}>
-                  Pilih atau isi kecamatan & kota tujuan untuk menampilkan pilihan kurir.
+                  {t('checkout.selectCourierPrompt')}
                 </div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 'var(--space-3)' }}>
@@ -959,7 +1007,7 @@ export default function CheckoutPage() {
               style={{ marginTop: 'var(--space-8)' }}
               onClick={handleProceedToPayment}
             >
-              Lanjut ke Pembayaran
+              {t('checkout.proceedToPayment')}
             </button>
           </div>
 
@@ -984,7 +1032,7 @@ export default function CheckoutPage() {
               style={{ marginBottom: 'var(--space-5)', display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}
               onClick={() => setStep('address')}
             >
-              <ArrowLeft size={16} /> Ubah Alamat & Kurir Pengiriman
+              <ArrowLeft size={16} /> {t('checkout.changeAddress')}
             </button>
 
             {/* Address & Shipping Review Summary */}
@@ -992,9 +1040,9 @@ export default function CheckoutPage() {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--clr-gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600 }}>
-                    Alamat Pengiriman Terpilih
+                    {t('checkout.selectedAddress')}
                   </span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--clr-text-3)' }}>{address.label || 'Alamat'}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--clr-text-3)' }}>{address.label || t('checkout.addressLabel')}</span>
                 </div>
                 <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>{address.fullName} ({address.phone})</p>
                 <p style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)', marginTop: '2px' }}>
@@ -1015,14 +1063,14 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', fontWeight: 400, marginBottom: 'var(--space-6)' }}>Metode Pembayaran</h2>
+            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', fontWeight: 400, marginBottom: 'var(--space-6)' }}>{t('checkout.paymentMethod')}</h2>
 
             {/* Payment method selector */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
               {[
-                { key: 'gopay', label: 'QRIS / E-Wallet', icon: QrCode },
-                { key: 'credit_card', label: 'Kartu Kredit', icon: CreditCard },
-                { key: 'cod', label: 'COD (Bayar di Tempat)', icon: Package },
+                { key: 'gopay', label: t('checkout.qris'), icon: QrCode },
+                { key: 'credit_card', label: t('checkout.creditCard'), icon: CreditCard },
+                { key: 'cod', label: t('checkout.cod'), icon: Package },
               ].map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
@@ -1083,10 +1131,10 @@ export default function CheckoutPage() {
                     </div>
                     <div>
                       <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--clr-text)', margin: 0 }}>
-                        QRIS Standar Pembayaran Nasional
+                        {t('checkout.qrisNational')}
                       </h4>
                       <span style={{ fontSize: '0.75rem', color: 'var(--clr-text-3)' }}>
-                        NMID: ID102026092601 • LUXE Official Store
+                        {t('checkout.qrisMerchant')}
                       </span>
                     </div>
                   </div>
@@ -1105,7 +1153,7 @@ export default function CheckoutPage() {
                     border: '1px solid var(--clr-border)',
                   }}>
                     <Clock size={15} />
-                    <span>Sisa Waktu: {formatTimer(qrisTimeLeft)}</span>
+                    <span>{t('checkout.qrisTimeRemaining')}: {formatTimer(qrisTimeLeft)}</span>
                   </div>
                 </div>
 
@@ -1136,14 +1184,14 @@ export default function CheckoutPage() {
                     />
                     <div style={{ marginTop: '10px', textAlign: 'center' }}>
                       <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 700, color: '#111', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Scan dengan Aplikasi Pembayaran
+                        {t('checkout.qrisScanPrompt')}
                       </p>
                     </div>
                   </div>
 
                   <div style={{ marginTop: 'var(--space-3)', textAlign: 'center' }}>
                     <span style={{ fontSize: '0.75rem', color: 'var(--clr-text-3)' }}>
-                      Total Pembayaran QRIS:
+                      {t('checkout.qrisTotal')}
                     </span>
                     <p style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--clr-gold)', margin: '2px 0' }}>
                       {formatPrice(total)}
@@ -1160,13 +1208,13 @@ export default function CheckoutPage() {
                   marginBottom: 'var(--space-6)',
                 }}>
                   <h5 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--clr-text)', marginBottom: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Smartphone size={15} style={{ color: 'var(--clr-gold)' }} /> Cara Pembayaran via QRIS:
+                    <Smartphone size={15} style={{ color: 'var(--clr-gold)' }} /> {t('checkout.qrisHowToPay')}
                   </h5>
                   <ol style={{ margin: 0, paddingLeft: 'var(--space-5)', fontSize: '0.8rem', color: 'var(--clr-text-2)', lineHeight: 1.6 }}>
-                    <li>Buka aplikasi <strong>BCA Mobile, GoPay, OVO, DANA, ShopeePay, LinkAja</strong>, atau m-Banking pilihan Anda.</li>
-                    <li>Pilih menu <strong>Bayar</strong> / <strong>Scan QRIS</strong>.</li>
-                    <li>Arahkan kamera HP ke QR Code di atas.</li>
-                    <li>Periksa nama merchant <strong>LUXE Official Store</strong> dan nominal <strong>{formatPrice(total)}</strong>, lalu konfirmasi pembayaran.</li>
+                    <li>{t('checkout.qrisStep1')}</li>
+                    <li>{t('checkout.qrisStep2')}</li>
+                    <li>{t('checkout.qrisStep3')}</li>
+                    <li>{t('checkout.qrisStep4', { amount: formatPrice(total) })}</li>
                   </ol>
                 </div>
 
@@ -1183,7 +1231,7 @@ export default function CheckoutPage() {
                     ) : (
                       <RefreshCw size={16} />
                     )}
-                    Cek Status Pembayaran
+                    {t('checkout.qrisCheckStatus')}
                   </button>
 
                   {/* Dev / Demo Simulator Button */}
@@ -1197,11 +1245,11 @@ export default function CheckoutPage() {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '6px' }}>
                       <span className="badge badge-gold" style={{ fontSize: '0.65rem' }}>
-                        Mode Development / Demo
+                        {t('checkout.demoBadge')}
                       </span>
                     </div>
                     <p style={{ fontSize: '0.75rem', color: 'var(--clr-text-3)', marginBottom: '8px' }}>
-                      Simulasikan status bayar QRIS langsung sukses tanpa menunggu transfer asli.
+                      {t('checkout.demoDesc')}
                     </p>
                     <button
                       type="button"
@@ -1214,7 +1262,7 @@ export default function CheckoutPage() {
                         <Loader2 size={16} className="animate-spin" />
                       ) : (
                         <>
-                          <Check size={16} /> Simulasikan Pembayaran Berhasil
+                          <Check size={16} /> {t('checkout.simulateSuccess')}
                         </>
                       )}
                     </button>
@@ -1229,13 +1277,13 @@ export default function CheckoutPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-5)' }}>
                   <Lock size={14} style={{ color: 'var(--clr-gold)' }} />
                   <span style={{ fontSize: '0.75rem', color: 'var(--clr-gold)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                    Data Kartu Terenkripsi (DEMO)
+                    {t('checkout.cardEncrypted')}
                   </span>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
                   <div className="input-group" style={{ gridColumn: '1 / -1' }}>
-                    <label className="input-label">Nomor Kartu</label>
+                    <label className="input-label">{t('checkout.cardNumber')}</label>
                     <input
                       className={`input ${cardErrors.number ? 'error' : ''}`}
                       placeholder="4242 4242 4242 4242"
@@ -1244,22 +1292,22 @@ export default function CheckoutPage() {
                       onChange={(e) => { setCard((p) => ({ ...p, number: formatCardNumber(e.target.value) })); setCardErrors((p) => ({ ...p, number: '' })); }}
                     />
                     {cardErrors.number && <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>{cardErrors.number}</span>}
-                    <span style={{ fontSize: '0.7rem', color: 'var(--clr-text-3)' }}>Tip: Kartu ending 0000 akan selalu gagal (untuk simulasi penolakan)</span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--clr-text-3)' }}>{t('checkout.cardTip')}</span>
                   </div>
                   <div className="input-group">
-                    <label className="input-label">Expired (MM/YY)</label>
+                    <label className="input-label">{t('checkout.cardExpiry')} (MM/YY)</label>
                     <input className={`input ${cardErrors.expiry ? 'error' : ''}`} placeholder="12/28" value={card.expiry} maxLength={5}
                       onChange={(e) => { setCard((p) => ({ ...p, expiry: formatExpiry(e.target.value) })); setCardErrors((p) => ({ ...p, expiry: '' })); }} />
                     {cardErrors.expiry && <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>{cardErrors.expiry}</span>}
                   </div>
                   <div className="input-group">
-                    <label className="input-label">CVV</label>
+                    <label className="input-label">{t('checkout.cardCvv')}</label>
                     <input className={`input ${cardErrors.cvv ? 'error' : ''}`} placeholder="123" type="password" maxLength={4} value={card.cvv}
                       onChange={(e) => { setCard((p) => ({ ...p, cvv: e.target.value.replace(/\D/g, '') })); setCardErrors((p) => ({ ...p, cvv: '' })); }} />
                     {cardErrors.cvv && <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>{cardErrors.cvv}</span>}
                   </div>
                   <div className="input-group" style={{ gridColumn: '1 / -1' }}>
-                    <label className="input-label">Nama di Kartu</label>
+                    <label className="input-label">{t('checkout.cardName')}</label>
                     <input className={`input ${cardErrors.name ? 'error' : ''}`} placeholder="SARAH JOHNSON" value={card.name}
                       onChange={(e) => { setCard((p) => ({ ...p, name: e.target.value.toUpperCase() })); setCardErrors((p) => ({ ...p, name: '' })); }} />
                     {cardErrors.name && <span style={{ fontSize: '0.75rem', color: 'var(--clr-error)' }}>{cardErrors.name}</span>}
@@ -1267,7 +1315,7 @@ export default function CheckoutPage() {
                 </div>
 
                 <button className="btn btn-primary btn-lg btn-block" style={{ marginTop: 'var(--space-8)' }} onClick={handlePlaceOrder} disabled={isSubmitting}>
-                  {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <>Bayar Sekarang - {formatPrice(total)}</>}
+                  {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <>{t('checkout.payNow')} - {formatPrice(total)}</>}
                 </button>
               </div>
             )}
@@ -1275,11 +1323,11 @@ export default function CheckoutPage() {
             {paymentMethod === 'cod' && (
               <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-8)', textAlign: 'center', animation: 'fadeIn 0.3s both' }}>
                 <Package size={48} style={{ color: 'var(--clr-gold)', margin: '0 auto var(--space-4)' }} />
-                <p style={{ fontWeight: 600, marginBottom: 'var(--space-2)' }}>Bayar di Tempat (COD)</p>
-                <p style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>Siapkan uang tunai sejumlah {formatPrice(total)} saat kurir tiba di alamat Anda.</p>
+                <p style={{ fontWeight: 600, marginBottom: 'var(--space-2)' }}>{t('checkout.cod')}</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>{t('checkout.codInstruction', { amount: formatPrice(total) })}</p>
 
                 <button className="btn btn-primary btn-lg btn-block" style={{ marginTop: 'var(--space-8)' }} onClick={handlePlaceOrder} disabled={isSubmitting}>
-                  {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <>Konfirmasi Pesanan COD - {formatPrice(total)}</>}
+                  {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <>{t('checkout.confirmCod', { amount: formatPrice(total) })}</>}
                 </button>
               </div>
             )}
@@ -1308,14 +1356,27 @@ function OrderSummary({ items, subtotal, shipping, tax, total, selectedShipping 
   total: number;
   selectedShipping: ShippingCostOption | null;
 }) {
+  const { t, formatPrice } = useT();
   return (
     <div className="card" style={{ padding: 'var(--space-6)', position: 'sticky', top: 'calc(var(--nav-height) + 16px)' }}>
-      <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 400, fontSize: '1.1rem', marginBottom: 'var(--space-5)' }}>Pesanan Anda</h3>
+      <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 400, fontSize: '1.1rem', marginBottom: 'var(--space-5)' }}>{t('checkout.orderSummary')}</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginBottom: 'var(--space-5)', maxHeight: '280px', overflowY: 'auto' }}>
         {items.map((item) => (
           <div key={`${item.productId}-${item.size}-${item.color}`} style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
             <div style={{ position: 'relative', width: '52px', height: '68px', borderRadius: 'var(--radius-sm)', overflow: 'hidden', flexShrink: 0, background: 'var(--clr-bg-3)' }}>
-              <Image src={item.product.images[0]} alt={item.product.name} fill style={{ objectFit: 'cover' }} />
+              <Image
+                src={getImageUrl(getCartItemImage(item))}
+                alt={item.product.name}
+                fill
+                style={{ objectFit: 'cover' }}
+                onError={(e) => {
+                  const target = e.currentTarget as HTMLImageElement;
+                  if (!target.src.includes('product_dress_1_1790064527682.jpg')) {
+                    target.srcset = '';
+                    target.src = DEFAULT_PLACEHOLDER_IMAGE;
+                  }
+                }}
+              />
               <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '18px', height: '18px', background: 'var(--clr-gold)', borderRadius: '50%', fontSize: '0.65rem', fontWeight: 700, color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{item.quantity}</span>
             </div>
             <div style={{ flex: 1 }}>
@@ -1328,18 +1389,18 @@ function OrderSummary({ items, subtotal, shipping, tax, total, selectedShipping 
       </div>
       <hr className="divider" />
       {[
-        { label: 'Subtotal', value: formatPrice(subtotal) },
-        { label: selectedShipping ? `Ongkir (${selectedShipping.name} ${selectedShipping.service})` : 'Ongkir', value: shipping === 0 ? 'Pilih Kurir' : formatPrice(shipping) },
-        { label: 'PPN (10%)', value: formatPrice(tax) },
+        { label: t('cart.subtotal'), value: formatPrice(subtotal) },
+        { label: selectedShipping ? `${t('checkout.shippingCost')} (${selectedShipping.name} ${selectedShipping.service})` : t('checkout.shippingCost'), value: shipping === 0 ? t('checkout.selectShipping') : formatPrice(shipping) },
+        { label: t('checkout.tax'), value: formatPrice(tax) },
       ].map(({ label, value }) => (
         <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)', fontSize: '0.875rem' }}>
           <span style={{ color: 'var(--clr-text-2)' }}>{label}</span>
-          <span style={{ color: label.startsWith('Ongkir') && shipping > 0 ? 'var(--clr-gold)' : 'inherit', fontWeight: label.startsWith('Ongkir') && shipping > 0 ? 600 : 400 }}>{value}</span>
+          <span style={{ color: label.startsWith(t('checkout.shippingCost')) && shipping > 0 ? 'var(--clr-gold)' : 'inherit', fontWeight: label.startsWith(t('checkout.shippingCost')) && shipping > 0 ? 600 : 400 }}>{value}</span>
         </div>
       ))}
       <hr className="divider" />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontWeight: 700 }}>Total</span>
+        <span style={{ fontWeight: 700 }}>{t('checkout.total')}</span>
         <span style={{ fontWeight: 700, fontSize: '1.2rem', color: 'var(--clr-gold)' }}>{formatPrice(total)}</span>
       </div>
     </div>

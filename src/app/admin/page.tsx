@@ -2,7 +2,7 @@
 export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/auth';
-import { formatPrice } from '@/lib/utils';
+import { formatPrice, getImageUrl, DEFAULT_PLACEHOLDER_IMAGE } from '@/lib/utils';
 import {
   Users, Package, ShoppingBag, TrendingUp,
   Edit2, Trash2, Plus, X, Check
@@ -150,7 +150,19 @@ export default function AdminPage() {
                         <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                             <div style={{ position: 'relative', width: '44px', height: '56px', borderRadius: 'var(--radius-sm)', overflow: 'hidden', flexShrink: 0, background: 'var(--clr-bg-3)' }}>
-                              <Image src={product.images[0]} alt={product.name} fill style={{ objectFit: 'cover' }} />
+                              <Image
+                                src={getImageUrl(product.images?.[0])}
+                                alt={product.name}
+                                fill
+                                style={{ objectFit: 'cover' }}
+                                onError={(e) => {
+                                  const target = e.currentTarget as HTMLImageElement;
+                                  if (!target.src.includes('product_dress_1_1790064527682.jpg')) {
+                                    target.srcset = '';
+                                    target.src = DEFAULT_PLACEHOLDER_IMAGE;
+                                  }
+                                }}
+                              />
                             </div>
                             <div>
                               <p style={{ fontWeight: 600 }}>{product.name}</p>

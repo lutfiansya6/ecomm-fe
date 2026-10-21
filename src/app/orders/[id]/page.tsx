@@ -1,11 +1,13 @@
 'use client';
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState, use, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { useToast } from '@/components/ui/ToastProvider';
-import { formatPrice } from '@/lib/utils';
+import { getImageUrl, DEFAULT_PLACEHOLDER_IMAGE } from '@/lib/utils';
+import { getCartItemImage } from '@/lib/colors';
+import { useT } from '@/i18n/LanguageProvider';
 import type { Order } from '@/types';
 import {
   ArrowLeft,
@@ -23,61 +25,74 @@ import {
   FileText,
 } from 'lucide-react';
 
-const STATUS_MAP: Record<string, { label: string; cls: string; desc: string }> = {
-  pending: {
-    label: 'Menunggu',
-    cls: 'badge-warning',
-    desc: 'Pesanan Anda sedang menunggu verifikasi dan proses pembayaran.',
-  },
-  confirmed: {
-    label: 'Dikonfirmasi',
-    cls: 'badge-gold',
-    desc: 'Pesanan Anda telah dikonfirmasi dan sedang disiapkan oleh tim kurasi LUXE.',
-  },
-  shipped: {
-    label: 'Dalam Pengiriman',
-    cls: 'badge-gold',
-    desc: 'Pesanan Anda sedang dalam perjalanan menuju alamat tujuan.',
-  },
-  delivered: {
-    label: 'Selesai / Diterima',
-    cls: 'badge-success',
-    desc: 'Pesanan Anda telah berhasil diterima. Terima kasih telah berbelanja di LUXE.',
-  },
-  cancelled: {
-    label: 'Dibatalkan',
-    cls: 'badge-error',
-    desc: 'Pesanan ini telah dibatalkan.',
-  },
-};
-
-const PAYMENT_MAP: Record<string, { label: string; cls: string }> = {
-  pending: { label: 'Belum Bayar', cls: 'badge-warning' },
-  paid: { label: 'Lunas', cls: 'badge-success' },
-  failed: { label: 'Gagal', cls: 'badge-error' },
-};
-
-const PAYMENT_METHOD_LABEL: Record<string, string> = {
-  credit_card: 'Kartu Kredit / Debit',
-  gopay: 'GoPay / QRIS',
-  cod: 'Bayar di Tempat (COD)',
-};
-
-const TIMELINE_STEPS = [
-  { key: 'pending', label: 'Pesanan Dibuat', icon: Clock },
-  { key: 'confirmed', label: 'Dikonfirmasi', icon: FileText },
-  { key: 'shipped', label: 'Dikirim', icon: Truck },
-  { key: 'delivered', label: 'Diterima', icon: CheckCircle2 },
-];
-
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const { token, user } = useAuthStore();
+  const { token } = useAuthStore();
   const { showToast } = useToast();
+  const { t, formatDate, formatPrice } = useT();
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+
+  const statusMap: Record<string, { label: string; cls: string; desc: string }> = useMemo(
+    () => ({
+      pending: {
+        label: t('account.status.pending'),
+        cls: 'badge-warning',
+        desc: t('account.orderStatusDesc.pending'),
+      },
+      confirmed: {
+        label: t('account.status.confirmed'),
+        cls: 'badge-gold',
+        desc: t('account.orderStatusDesc.confirmed'),
+      },
+      shipped: {
+        label: t('account.status.shipped'),
+        cls: 'badge-gold',
+        desc: t('account.orderStatusDesc.shipped'),
+      },
+      delivered: {
+        label: t('account.status.delivered'),
+        cls: 'badge-success',
+        desc: t('account.orderStatusDesc.delivered'),
+      },
+      cancelled: {
+        label: t('account.status.cancelled'),
+        cls: 'badge-error',
+        desc: t('account.orderStatusDesc.cancelled'),
+      },
+    }),
+    [t]
+  );
+
+  const paymentMap: Record<string, { label: string; cls: string }> = useMemo(
+    () => ({
+      pending: { label: t('account.payment.pending'), cls: 'badge-warning' },
+      paid: { label: t('account.payment.paid'), cls: 'badge-success' },
+      failed: { label: t('account.payment.failed'), cls: 'badge-error' },
+    }),
+    [t]
+  );
+
+  const paymentMethodLabel: Record<string, string> = useMemo(
+    () => ({
+      credit_card: t('account.paymentMethod.credit_card'),
+      gopay: t('account.paymentMethod.gopay'),
+      cod: t('account.paymentMethod.cod'),
+    }),
+    [t]
+  );
+
+  const timelineSteps = useMemo(
+    () => [
+      { key: 'pending', label: t('account.timeline.pending'), icon: Clock },
+      { key: 'confirmed', label: t('account.timeline.confirmed'), icon: FileText },
+      { key: 'shipped', label: t('account.timeline.shipped'), icon: Truck },
+      { key: 'delivered', label: t('account.timeline.delivered'), icon: CheckCircle2 },
+    ],
+    [t]
+  );
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -93,23 +108,23 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         if (data.success && data.data) {
           setOrder(data.data);
         } else {
-          showToast(data.error || 'Pesanan tidak ditemukan', 'error');
+          showToast(data.error || t('errors.notFound'), 'error');
         }
       } catch {
-        showToast('Gagal memuat detail pesanan', 'error');
+        showToast(t('errors.ordersLoadFailed'), 'error');
       } finally {
         setLoading(false);
       }
     };
 
     fetchOrder();
-  }, [id, token, showToast]);
+  }, [id, token, showToast, t]);
 
   const copyOrderId = () => {
     if (!order) return;
     navigator.clipboard.writeText(order.id);
     setCopied(true);
-    showToast('ID Pesanan disalin ke clipboard', 'success');
+    showToast(t('common.copied'), 'success');
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -131,10 +146,33 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   if (loading) {
     return (
-      <div className="container" style={{ padding: 'calc(72px + var(--space-8)) var(--space-6)', maxWidth: '1000px' }}>
-        <div className="skeleton" style={{ height: '36px', width: '220px', marginBottom: 'var(--space-6)', borderRadius: 'var(--radius-md)' }} />
-        <div className="skeleton" style={{ height: '140px', marginBottom: 'var(--space-6)', borderRadius: 'var(--radius-lg)' }} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 'var(--space-6)' }}>
+      <div
+        className="container"
+        style={{
+          padding: 'calc(72px + var(--space-8)) var(--space-6)',
+          maxWidth: '1000px',
+        }}
+      >
+        <div
+          className="skeleton"
+          style={{
+            height: '36px',
+            width: '220px',
+            marginBottom: 'var(--space-6)',
+            borderRadius: 'var(--radius-md)',
+          }}
+        />
+        <div
+          className="skeleton"
+          style={{ height: '140px', marginBottom: 'var(--space-6)', borderRadius: 'var(--radius-lg)' }}
+        />
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+            gap: 'var(--space-6)',
+          }}
+        >
           <div className="skeleton" style={{ height: '320px', borderRadius: 'var(--radius-lg)' }} />
           <div className="skeleton" style={{ height: '320px', borderRadius: 'var(--radius-lg)' }} />
         </div>
@@ -144,7 +182,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   if (!order) {
     return (
-      <div className="container" style={{ padding: 'calc(72px + var(--space-12)) var(--space-6)', maxWidth: '600px', textAlign: 'center' }}>
+      <div
+        className="container"
+        style={{
+          padding: 'calc(72px + var(--space-12)) var(--space-6)',
+          maxWidth: '600px',
+          textAlign: 'center',
+        }}
+      >
         <div
           style={{
             width: '64px',
@@ -161,28 +206,41 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         >
           <AlertCircle size={32} />
         </div>
-        <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem', marginBottom: 'var(--space-3)', fontWeight: 400 }}>
-          Pesanan Tidak Ditemukan
+        <h1
+          style={{
+            fontFamily: 'var(--font-serif)',
+            fontSize: '2rem',
+            marginBottom: 'var(--space-3)',
+            fontWeight: 400,
+          }}
+        >
+          {t('errors.notFound')}
         </h1>
         <p style={{ color: 'var(--clr-text-2)', marginBottom: 'var(--space-6)' }}>
-          Pesanan dengan ID <span style={{ fontFamily: 'monospace', color: 'var(--clr-text)' }}>{id}</span> tidak ditemukan atau Anda tidak memiliki akses untuk melihatnya.
+          {t('account.orderNumber')}: {id}
         </p>
         <button
           type="button"
           onClick={() => router.push('/orders')}
           className="btn btn-primary"
         >
-          <ArrowLeft size={16} /> Kembali ke Pesanan Saya
+          <ArrowLeft size={16} /> {t('account.backToOrders')}
         </button>
       </div>
     );
   }
 
-  const statusInfo = STATUS_MAP[order.orderStatus] || STATUS_MAP.pending;
-  const paymentInfo = PAYMENT_MAP[order.paymentStatus] || PAYMENT_MAP.pending;
+  const statusInfo = statusMap[order.orderStatus] || statusMap.pending;
+  const paymentInfo = paymentMap[order.paymentStatus] || paymentMap.pending;
 
   return (
-    <div className="container" style={{ padding: 'calc(72px + var(--space-8)) var(--space-6) var(--space-12)', maxWidth: '1000px' }}>
+    <div
+      className="container"
+      style={{
+        padding: 'calc(72px + var(--space-8)) var(--space-6) var(--space-12)',
+        maxWidth: '1000px',
+      }}
+    >
       {/* Navigation & Breadcrumb */}
       <div style={{ marginBottom: 'var(--space-6)' }}>
         <button
@@ -213,7 +271,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             e.currentTarget.style.background = 'var(--clr-bg-2)';
           }}
         >
-          <ArrowLeft size={16} /> Kembali ke Pesanan Saya
+          <ArrowLeft size={16} /> {t('account.backToOrders')}
         </button>
       </div>
 
@@ -227,19 +285,46 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           marginBottom: 'var(--space-6)',
         }}
       >
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 'var(--space-4)',
+            marginBottom: 'var(--space-4)',
+          }}
+        >
           <div>
-            <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.15em', color: 'var(--clr-gold)', display: 'block', marginBottom: '4px' }}>
-              Detail Pesanan
+            <span
+              style={{
+                fontSize: '0.75rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.15em',
+                color: 'var(--clr-gold)',
+                display: 'block',
+                marginBottom: '4px',
+              }}
+            >
+              {t('account.viewDetails')}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-              <h1 style={{ fontFamily: 'monospace', fontSize: 'clamp(1.1rem, 3vw, 1.4rem)', fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--clr-text)' }}>
+              <h1
+                style={{
+                  fontFamily: 'monospace',
+                  fontSize: 'clamp(1.1rem, 3vw, 1.4rem)',
+                  fontWeight: 700,
+                  letterSpacing: '-0.02em',
+                  color: 'var(--clr-text)',
+                }}
+              >
                 {order.id}
               </h1>
               <button
                 onClick={copyOrderId}
                 className="btn btn-icon"
-                title="Salin ID Pesanan"
+                title={t('common.copy')}
+                aria-label={t('common.copy')}
                 style={{
                   background: 'var(--clr-bg-3)',
                   border: '1px solid var(--clr-border)',
@@ -256,46 +341,92 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                 {copied ? <Check size={14} /> : <Copy size={14} />}
               </button>
             </div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <p
+              style={{
+                fontSize: '0.85rem',
+                color: 'var(--clr-text-2)',
+                marginTop: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
               <Clock size={14} />
-              Dipesan pada {new Date(order.createdAt).toLocaleDateString('id-ID', {
+              {formatDate(order.createdAt, {
                 weekday: 'long',
                 day: 'numeric',
                 month: 'long',
                 year: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit',
-              })} WIB
+              })}
             </p>
           </div>
 
           <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <span className={`badge ${statusInfo.cls}`} style={{ fontSize: '0.8rem', padding: '0.35rem 0.8rem' }}>
+            <span
+              className={`badge ${statusInfo.cls}`}
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.8rem' }}
+            >
               {statusInfo.label}
             </span>
-            <span className={`badge ${paymentInfo.cls}`} style={{ fontSize: '0.8rem', padding: '0.35rem 0.8rem' }}>
+            <span
+              className={`badge ${paymentInfo.cls}`}
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.8rem' }}
+            >
               {paymentInfo.label}
             </span>
           </div>
         </div>
 
         {/* Status description alert */}
-        <p style={{ fontSize: '0.875rem', color: 'var(--clr-text-2)', background: 'var(--clr-bg-3)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', borderLeft: '3px solid var(--clr-gold)' }}>
+        <p
+          style={{
+            fontSize: '0.875rem',
+            color: 'var(--clr-text-2)',
+            background: 'var(--clr-bg-3)',
+            padding: 'var(--space-3) var(--space-4)',
+            borderRadius: 'var(--radius-md)',
+            borderLeft: '3px solid var(--clr-gold)',
+          }}
+        >
           {statusInfo.desc}
         </p>
 
         {/* Progress Tracker (only if not cancelled) */}
         {order.orderStatus !== 'cancelled' && (
-          <div style={{ marginTop: 'var(--space-6)', paddingTop: 'var(--space-6)', borderTop: '1px solid var(--clr-border)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--space-2)', position: 'relative' }}>
-              {TIMELINE_STEPS.map((step) => {
+          <div
+            style={{
+              marginTop: 'var(--space-6)',
+              paddingTop: 'var(--space-6)',
+              borderTop: '1px solid var(--clr-border)',
+            }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: 'var(--space-2)',
+                position: 'relative',
+              }}
+            >
+              {timelineSteps.map((step) => {
                 const state = getStepStatus(step.key, order.orderStatus);
                 const Icon = step.icon;
                 const isCompleted = state === 'completed';
                 const isCurrent = state === 'current';
 
                 return (
-                  <div key={step.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', position: 'relative' }}>
+                  <div
+                    key={step.key}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      textAlign: 'center',
+                      position: 'relative',
+                    }}
+                  >
                     <div
                       style={{
                         width: '38px',
@@ -306,7 +437,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                         justifyContent: 'center',
                         background: isCompleted || isCurrent ? 'var(--clr-gold)' : 'var(--clr-bg-3)',
                         color: isCompleted || isCurrent ? '#000000' : 'var(--clr-text-3)',
-                        border: isCurrent ? '3px solid var(--clr-gold-light)' : '1px solid var(--clr-border)',
+                        border: isCurrent
+                          ? '3px solid var(--clr-gold-light)'
+                          : '1px solid var(--clr-border)',
                         boxShadow: isCurrent ? 'var(--shadow-gold)' : 'none',
                         marginBottom: '8px',
                         transition: 'all var(--transition-base)',
@@ -335,7 +468,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       </div>
 
       {/* Two Columns Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--space-6)', alignItems: 'start' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: 'var(--space-6)',
+          alignItems: 'start',
+        }}
+      >
         {/* Left Column: Order Items */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
           <div
@@ -346,16 +486,26 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               padding: 'var(--space-6)',
             }}
           >
-            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 400, marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h2
+              style={{
+                fontFamily: 'var(--font-serif)',
+                fontSize: '1.25rem',
+                fontWeight: 400,
+                marginBottom: 'var(--space-4)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
               <Package size={20} style={{ color: 'var(--clr-gold)' }} />
-              Daftar Produk ({order.items.reduce((acc, it) => acc + it.quantity, 0)})
+              {t('checkout.itemsCount', {
+                count: order.items.reduce((acc, it) => acc + it.quantity, 0),
+              })}
             </h2>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
               {order.items.map((item, idx) => {
-                const productImg = Array.isArray(item.product?.images)
-                  ? item.product.images[0]
-                  : (item.product?.images as unknown as string) || '/product_dress_1_1790064527682.jpg';
+                const productImg = getImageUrl(getCartItemImage(item));
 
                 return (
                   <div
@@ -364,7 +514,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                       display: 'flex',
                       gap: 'var(--space-4)',
                       paddingBottom: idx !== order.items.length - 1 ? 'var(--space-4)' : 0,
-                      borderBottom: idx !== order.items.length - 1 ? '1px solid var(--clr-border)' : 'none',
+                      borderBottom:
+                        idx !== order.items.length - 1 ? '1px solid var(--clr-border)' : 'none',
                     }}
                   >
                     {/* Image */}
@@ -385,11 +536,25 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                         alt={item.product?.name || item.productId}
                         fill
                         style={{ objectFit: 'cover' }}
+                        onError={(e) => {
+                          const target = e.currentTarget as HTMLImageElement;
+                          if (!target.src.includes('product_dress_1_1790064527682.jpg')) {
+                            target.srcset = '';
+                            target.src = DEFAULT_PLACEHOLDER_IMAGE;
+                          }
+                        }}
                       />
                     </div>
 
                     {/* Details */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div
+                      style={{
+                        flex: 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                      }}
+                    >
                       <div>
                         <Link
                           href={`/products/${item.productId}`}
@@ -404,21 +569,43 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                         >
                           {item.product?.name || item.productId}
                         </Link>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--clr-text-2)', marginTop: '4px' }}>
-                          Ukuran: <span style={{ color: 'var(--clr-text)' }}>{item.size}</span>
+                        <div
+                          style={{
+                            fontSize: '0.8rem',
+                            color: 'var(--clr-text-2)',
+                            marginTop: '4px',
+                          }}
+                        >
+                          {t('product.size')}:{' '}
+                          <span style={{ color: 'var(--clr-text)' }}>{item.size}</span>
                           {item.color && (
                             <>
-                              {' · '}Warna: <span style={{ color: 'var(--clr-text)' }}>{item.color}</span>
+                              {' · '}
+                              {t('product.color')}:{' '}
+                              <span style={{ color: 'var(--clr-text)' }}>{item.color}</span>
                             </>
                           )}
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 'var(--space-2)' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-end',
+                          marginTop: 'var(--space-2)',
+                        }}
+                      >
                         <span style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)' }}>
                           {item.quantity} × {formatPrice(item.product?.price || 0)}
                         </span>
-                        <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--clr-gold)' }}>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            fontSize: '0.95rem',
+                            color: 'var(--clr-gold)',
+                          }}
+                        >
                           {formatPrice((item.product?.price || 0) * item.quantity)}
                         </span>
                       </div>
@@ -438,17 +625,25 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               padding: 'var(--space-6)',
             }}
           >
-            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 400, marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h2
+              style={{
+                fontFamily: 'var(--font-serif)',
+                fontSize: '1.25rem',
+                fontWeight: 400,
+                marginBottom: 'var(--space-4)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
               <MapPin size={20} style={{ color: 'var(--clr-gold)' }} />
-              Alamat Pengiriman
+              {t('account.deliveryAddress')}
             </h2>
 
             <div style={{ fontSize: '0.9rem', lineHeight: '1.7', color: 'var(--clr-text)' }}>
               <p style={{ fontWeight: 700, fontSize: '0.95rem' }}>{order.address.fullName}</p>
               <p style={{ color: 'var(--clr-text-2)' }}>{order.address.phone}</p>
-              <p style={{ marginTop: '4px', color: 'var(--clr-text)' }}>
-                {order.address.street}
-              </p>
+              <p style={{ marginTop: '4px', color: 'var(--clr-text)' }}>{order.address.street}</p>
               <p style={{ color: 'var(--clr-text-2)' }}>
                 {order.address.city}, {order.address.province} {order.address.postalCode}
               </p>
@@ -470,63 +665,130 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               padding: 'var(--space-6)',
             }}
           >
-            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 400, marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h2
+              style={{
+                fontFamily: 'var(--font-serif)',
+                fontSize: '1.25rem',
+                fontWeight: 400,
+                marginBottom: 'var(--space-4)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
               <CreditCard size={20} style={{ color: 'var(--clr-gold)' }} />
-              Rincian Pembayaran
+              {t('account.paymentSummary')}
             </h2>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', fontSize: '0.9rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--clr-text-2)' }}>
-                <span>Metode Pembayaran</span>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-3)',
+                fontSize: '0.9rem',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  color: 'var(--clr-text-2)',
+                }}
+              >
+                <span>{t('checkout.paymentMethod')}</span>
                 <span style={{ color: 'var(--clr-text)', fontWeight: 500 }}>
-                  {PAYMENT_METHOD_LABEL[order.paymentMethod] || order.paymentMethod}
+                  {paymentMethodLabel[order.paymentMethod] || order.paymentMethod}
                 </span>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--clr-text-2)' }}>
-                <span>Status Pembayaran</span>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  color: 'var(--clr-text-2)',
+                }}
+              >
+                <span>{t('account.paymentStatus')}</span>
                 <span className={`badge ${paymentInfo.cls}`}>{paymentInfo.label}</span>
               </div>
 
-              <div style={{ height: '1px', background: 'var(--clr-border)', margin: 'var(--space-2) 0' }} />
+              <div
+                style={{
+                  height: '1px',
+                  background: 'var(--clr-border)',
+                  margin: 'var(--space-2) 0',
+                }}
+              />
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--clr-text-2)' }}>
-                <span>Subtotal Produk</span>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  color: 'var(--clr-text-2)',
+                }}
+              >
+                <span>{t('account.subtotal')}</span>
                 <span style={{ color: 'var(--clr-text)' }}>{formatPrice(order.subtotal)}</span>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--clr-text-2)' }}>
-                <span>Biaya Pengiriman</span>
-                <span style={{ color: order.shipping === 0 ? 'var(--clr-success)' : 'var(--clr-text)' }}>
-                  {order.shipping === 0 ? 'GRATIS' : formatPrice(order.shipping)}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  color: 'var(--clr-text-2)',
+                }}
+              >
+                <span>{t('account.shipping')}</span>
+                <span
+                  style={{
+                    color: order.shipping === 0 ? 'var(--clr-success)' : 'var(--clr-text)',
+                  }}
+                >
+                  {order.shipping === 0 ? t('common.free') : formatPrice(order.shipping)}
                 </span>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--clr-text-2)' }}>
-                <span>Pajak (PPN 11%)</span>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  color: 'var(--clr-text-2)',
+                }}
+              >
+                <span>{t('account.tax')}</span>
                 <span style={{ color: 'var(--clr-text)' }}>{formatPrice(order.tax)}</span>
               </div>
 
-              <div style={{ height: '1px', background: 'var(--clr-border)', margin: 'var(--space-2) 0' }} />
+              <div
+                style={{
+                  height: '1px',
+                  background: 'var(--clr-border)',
+                  margin: 'var(--space-2) 0',
+                }}
+              />
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px' }}>
-                <span style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--clr-text)' }}>Total Pembayaran</span>
-                <span style={{ fontWeight: 700, fontSize: '1.25rem', color: 'var(--clr-gold)' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingTop: '4px',
+                }}
+              >
+                <span style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--clr-text)' }}>
+                  {t('account.total')}
+                </span>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    fontSize: '1.25rem',
+                    color: 'var(--clr-gold)',
+                  }}
+                >
                   {formatPrice(order.total)}
                 </span>
               </div>
             </div>
-
-            {order.notes && (
-              <div style={{ marginTop: 'var(--space-4)', paddingTop: 'var(--space-4)', borderTop: '1px solid var(--clr-border)' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--clr-text-3)', display: 'block', marginBottom: '4px' }}>
-                  Catatan Pesanan:
-                </span>
-                <p style={{ fontSize: '0.85rem', color: 'var(--clr-text-2)', fontStyle: 'italic' }}>
-                  &ldquo;{order.notes}&rdquo;
-                </p>
-              </div>
-            )}
           </div>
 
           {/* Quick Actions */}
@@ -542,16 +804,22 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             }}
           >
             <Link href="/products" className="btn btn-primary btn-block">
-              <ShoppingBag size={18} /> Lanjut Belanja
+              <ShoppingBag size={18} /> {t('cart.startShopping')}
             </Link>
 
             <div style={{ textAlign: 'center', marginTop: 'var(--space-2)' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--clr-text-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                <HelpCircle size={14} /> Butuh bantuan dengan pesanan ini?
+              <span
+                style={{
+                  fontSize: '0.8rem',
+                  color: 'var(--clr-text-3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                }}
+              >
+                <HelpCircle size={14} /> concierge@luxe.id
               </span>
-              <p style={{ fontSize: '0.75rem', color: 'var(--clr-text-2)', marginTop: '2px' }}>
-                Hubungi concierge LUXE 24/7 di support@luxe.id
-              </p>
             </div>
           </div>
         </div>
